@@ -28,6 +28,18 @@ parser.add_argument("--dataset-root", default=default_dataset_dir)
 parser.add_argument("--log-dir", default=Path("logs"), type=Path)
 parser.add_argument("--learning-rate", default=1e-2, type=float, help="Learning rate")
 parser.add_argument(
+    "--length-conv",
+    default=128,
+    type=int,
+    help="Number of images within each mini-batch",
+)
+parser.add_argument(
+    "--stride-conv",
+    default=128,
+    type=int,
+    help="Number of images within each mini-batch",
+)
+parser.add_argument(
     "--batch-size",
     default=128,
     type=int,
@@ -102,13 +114,13 @@ def main(args):
         pin_memory=True,
     )
 
-    model = CNN(height=32, width=32, channels=3, class_count=10)
+    model = CNN(height=32, width=32, channels=3, class_count=50)
 
     ## TASK 8: Redefine the criterion to be softmax cross entropy
-    criterion = lambda logits, labels: torch.tensor(0)
+    criterion = nn.BCEloss()
 
     ## TASK 11: Define the optimizer
-    optimizer = None
+    optimizer = optim.
 
     log_dir = get_summary_writer_log_dir(args)
     print(f"Writing logs to {log_dir}")
@@ -131,33 +143,45 @@ def main(args):
 
 
 class CNN(nn.Module):
-    def __init__(self, height: int, width: int, channels: int, class_count: int):
+    def __init__(self, length: int, stride: int, channels: int, class_count: int):
         super().__init__()
-        self.input_shape = ImageShape(height=height, width=width, channels=channels)
+        #self.input_shape = ImageShape(height=height, width=width, channels=channels)
         self.class_count = class_count
-
-        self.conv1 = nn.Conv2d(
+        self.stride_conv = nn.Conv1d(
             in_channels=self.input_shape.channels,
+            out_channels=1,
+            kernel_size=length,
+            padding=0,
+            stride=stride,
+        )
+        self.initialise_layer(self.stride_conv)
+        self.conv1 = nn.Conv1d(
+            in_channels=self.stride_conv.out_channels,
             out_channels=32,
-            kernel_size=(5, 5),
-            padding=(2, 2),
+            kernel_size=8,
+            padding=0,
         )
         self.initialise_layer(self.conv1)
-        self.pool1 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
-        ## TASK 2-1: Define the second convolutional layer and initialise its parameters
-        ## TASK 3-1: Define the second pooling layer
-        ## TASK 5-1: Define the first FC layer and initialise its parameters
-        ## TASK 6-1: Define the last FC layer and initialise its parameters
+        self.pool1 = nn.MaxPool1d(kernel_size=4)
+        self.conv2 = nn.Conv1d(
+            in_channels=conv1.out_channels,
+            out_channels=32,
+            kernel_size=8,
+            padding=0,
+        )
+        self.initialise_layer(self.conv2)
+        self.pool2 = nn.MaxPool1d(kernel_size=4)
+        self.fc1 = nn.Linear(100)        
 
-    def forward(self, images: torch.Tensor) -> torch.Tensor:
-        x = F.relu(self.conv1(images))
+
+    def forward(self, audio: torch.Tensor) -> torch.Tensor:
+        x = F.relu(self.conv1(audio))
         x = self.pool1(x)
-        ## TASK 2-2: Pass x through the second convolutional layer
-        ## TASK 3-2: Pass x through the second pooling layer
-        ## TASK 4: Flatten the output of the pooling layer so it is of shape
-        ##         (batch_size, 4096)
-        ## TASK 5-2: Pass x through the first fully connected layer
-        ## TASK 6-2: Pass x through the last fully connected layer
+        x = F.relu(self.conv2(x))
+        x = self.pool2(x)
+        x = torch.flatten(x, start_dim=1)
+        x = self.fc1(x)
+        x = 
         return x
 
     @staticmethod
