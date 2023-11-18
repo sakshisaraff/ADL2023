@@ -118,7 +118,7 @@ def main(args):
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
 
     trainer = Trainer(
-        model, train_loader, test_loader, criterion, optimizer, scheduler, summary_writer, DEVICE
+        model, train_loader, val_loader, criterion, optimizer, scheduler, summary_writer, DEVICE
     )
     trainer.train(
         args.epochs,
@@ -126,6 +126,9 @@ def main(args):
         print_frequency=args.print_frequency,
         log_frequency=args.log_frequency,
     )
+
+    print("TESTING")
+    trainer.evaluate(test_loader)
 
     summary_writer.close()
 

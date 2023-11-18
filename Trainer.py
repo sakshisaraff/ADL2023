@@ -126,4 +126,6 @@ class Trainer:
             {"test": average_loss},
             self.step
         )
-        print(f"validation loss: {average_loss:.5f}, auc: {auc * 100:2.2f}")
+        print(f"evaluation loss: {average_loss:.5f}, auc: {auc * 100:2.2f}")
+
+        return auc
