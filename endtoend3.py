@@ -68,6 +68,11 @@ parser.add_argument(
     type=int,
     help="Number of worker processes used to load data.",
 )
+parser.add_argument(
+    "--hyperparameter-tuning",
+    default=False,
+    type=bool,
+)
 # endregion
 
 def main(args):
@@ -88,7 +93,6 @@ def main(args):
     train_dataset = dataset.MagnaTagATune(path_annotations_train, path_samples_train)
     val_dataset = dataset.MagnaTagATune(path_annotations_val, path_samples_val)
     test_dataset = dataset.MagnaTagATune(path_annotations_test, path_samples_test)
-    print(train_dataset.samples_path)
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         shuffle=True,
@@ -96,7 +100,6 @@ def main(args):
         pin_memory=True,
         num_workers=args.worker_count,
     )
-    # batch_size=args.batch_size,
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
         shuffle=False,
@@ -112,22 +115,48 @@ def main(args):
     )
     # endregion
 
-    model = CNN(length=args.length_conv, stride=args.stride_conv, channels=1, class_count=50)
-    criterion = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
+    # region Hyperparameter Tuning
+    batch_sizes = [8, 16, 32, 64, 128, 256, 512]
+    best_batch_size = 0
+    best_auc = 0
 
-    trainer = Trainer(
-        model, train_loader, val_loader, criterion, optimizer, scheduler, summary_writer, DEVICE
-    )
-    trainer.train(
-        args.epochs,
-        args.val_frequency,
-        print_frequency=args.print_frequency,
-        log_frequency=args.log_frequency,
+    for batch_size in batch_sizes:
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset,
+            shuffle=True,
+            batch_size=batch_size,
+            pin_memory=True,
+            num_workers=args.worker_count,
+        )
+        trainer, model = train(train_loader, val_loader, 10, summary_writer, 10, 10, 0.01, 20)
+        auc = trainer.evaluate(val_loader)
+        if auc > best_auc:
+            best_auc = auc
+            best_batch_size = batch_size
+
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        shuffle=True,
+        batch_size=best_batch_size,
+        pin_memory=True,
+        num_workers=args.worker_count,
     )
 
-    print("TESTING")
+    learning_rates = [0.001, 0.005, 0.01, 0.05, 0.1]
+    best_learning_rate = 0
+    best_auc = 0
+
+    for learning_rate in learning_rates:
+        trainer, model = train(train_loader, val_loader, 10, summary_writer, 10, 10, learning_rate, 20)
+        auc = trainer.evaluate(val_loader)
+        if auc > best_auc:
+            best_auc = auc
+            best_learning_rate = learning_rate
+    #endregion
+
+    # TESTING
+    trainer, model = train(train_loader, val_loader, 10, summary_writer, 10, 10, best_learning_rate, 20)
+    print("Test Results:")
     trainer.evaluate(test_loader)
 
     summary_writer.close()
@@ -144,7 +173,7 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
         from getting logged to the same TB log directory (which you can't easily
         untangle in TB).
     """
-    tb_log_dir_prefix = f'CNN_bs={args.batch_size}_lr={args.learning_rate}_with_scheduler_length={args.length_conv}_stride={args.stride_conv}_run_'
+    tb_log_dir_prefix = f'CNN_bs={args.batch_size}_lr={args.learning_rate}_with_scheduler_run_'
     i = 0
     while i < 1000:
         tb_log_dir = args.log_dir / (tb_log_dir_prefix + str(i))
@@ -152,6 +181,34 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
             return str(tb_log_dir)
         i += 1
     return str(tb_log_dir)
+
+# Trains a model with the given data and hyperparameters
+def train(
+        train_loader,
+        inter_eval_loader,
+        eval_frequency,
+        summary_writer,
+        print_frequency,
+        log_frequency,
+        learning_rate,
+        epochs
+):
+    model = CNN(channels=1, class_count=50)
+    criterion = nn.BCELoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
+
+    trainer = Trainer(
+        model, train_loader, inter_eval_loader, criterion, optimizer, scheduler, summary_writer, DEVICE
+    )
+    trainer.train(
+        epochs,
+        eval_frequency,
+        print_frequency=print_frequency,
+        log_frequency=log_frequency,
+    )
+
+    return trainer, model
 
 
 if __name__ == "__main__":

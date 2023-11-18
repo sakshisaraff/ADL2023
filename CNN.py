@@ -3,14 +3,14 @@ from torch import nn
 from torch.nn import functional as F
 
 class CNN(nn.Module):
-    def __init__(self, length: int, stride: int, channels: int, class_count: int):
+    def __init__(self, channels: int, class_count: int):
         super().__init__()
         self.class_count = class_count
         self.stride_conv = nn.Conv1d(
             in_channels=channels,
             out_channels=1,
-            kernel_size=length,
-            stride=stride,
+            kernel_size=256,
+            stride=256,
         )
         self.initialise_layer(self.stride_conv)
         self.conv1 = nn.Conv1d(
