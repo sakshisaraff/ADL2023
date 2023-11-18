@@ -17,4 +17,4 @@ module add python
 module load python
 module load "languages/anaconda3/2021-3.8.8-cuda-11.1-pytorch"
 
-python end_to_end.py
+python endtoend.py
