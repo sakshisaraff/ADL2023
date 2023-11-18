@@ -21,7 +21,6 @@ class CNN(nn.Module):
             stride=1,
         )
         self.initialise_layer(self.conv1)
-        #need stride 1, any padding??
         self.pool1 = nn.MaxPool1d(kernel_size=4, stride=1)
         self.conv2 = nn.Conv1d(
             in_channels=self.conv1.out_channels,
@@ -31,9 +30,7 @@ class CNN(nn.Module):
             stride=1,
         )
         self.initialise_layer(self.conv2)
-        #need stride 1, any padding??
         self.pool2 = nn.MaxPool1d(kernel_size=4, stride=1)
-        #how to use variable for input value?
         self.fc1 = nn.Linear(4160, 100)
         self.initialise_layer(self.fc1)
         self.fc2 = nn.Linear(100, 50)

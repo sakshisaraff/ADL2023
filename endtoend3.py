@@ -24,6 +24,7 @@ torch.backends.cudnn.benchmark = True
 default_dataset_dir = Path.home() / ".cache" / "torch" / "datasets"
 
 # region Argument Parsing
+
 parser = argparse.ArgumentParser(
     description="Train a simple CNN on MagnaTagATune for End-to-End Learning",
     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -44,10 +45,10 @@ parser.add_argument(
     help="Number of epochs (passes through the entire dataset) to train for",
 )
 parser.add_argument(
-    "--val-frequency",
+    "--eval-frequency",
     default=1,
     type=int,
-    help="How frequently to test the model on the validation set in number of epochs",
+    help="How frequently to evaluate the model in number of epochs",
 )
 parser.add_argument(
     "--log-frequency",
@@ -69,10 +70,11 @@ parser.add_argument(
     help="Number of worker processes used to load data.",
 )
 parser.add_argument(
-    "--hyperparameter-tuning",
-    default=False,
-    type=bool,
+    "--mode",
+    default="training",
+    help="Choices are hyperparameter-tuning, or training",
 )
+
 # endregion
 
 def main(args):
@@ -115,47 +117,70 @@ def main(args):
     )
     # endregion
 
-    # region Hyperparameter Tuning
-    batch_sizes = [8, 16, 32, 64, 128, 256, 512]
-    best_batch_size = 0
-    best_auc = 0
+    hyperparameter_choices = {
+        "batch_size": args.batch_size,
+        "epochs": args.epochs,
+        "learning_rate": args.learning_rate
+    }
 
-    for batch_size in batch_sizes:
-        train_loader = torch.utils.data.DataLoader(
-            train_dataset,
-            shuffle=True,
-            batch_size=batch_size,
-            pin_memory=True,
-            num_workers=args.worker_count,
-        )
-        trainer, model = train(train_loader, val_loader, 10, summary_writer, 10, 10, 0.01, 20)
-        auc = trainer.evaluate(val_loader)
-        if auc > best_auc:
-            best_auc = auc
-            best_batch_size = batch_size
+    """
+    If you specify on the command line that you want to tune hyperparameters,
+    use grid search to alter hyperparameter_choices
+    """
+    if args.mode == "hyperparameter-tuning":
+        hyperparameter_possibilities = {
+            "batch_size": [8, 16, 32, 64, 128, 256, 512],
+            "epochs": [5, 10, 20, 40],
+            "learning_rate": [1e-3, 5e-3, 1e-2, 5e-2, 1e-1]
+        }
 
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        shuffle=True,
-        batch_size=best_batch_size,
-        pin_memory=True,
-        num_workers=args.worker_count,
+        for hyperparameter, possibilities in hyperparameter_possibilities:
+            best_auc = 0
+            for possibility in possibilities:
+                if hyperparameter == "batch_size":
+                    train_loader = torch.utils.data.DataLoader(
+                        train_dataset,
+                        shuffle=True,
+                        batch_size=possibility,
+                        pin_memory=True,
+                        num_workers=args.worker_count,
+                    )
+                trainer, model = train(
+                    train_loader,
+                    val_loader,
+                    summary_writer,
+                    args.eval_frequency,
+                    args.print_frequency,
+                    args.log_frequency,
+                    hyperparameter_choices
+                )
+                auc = trainer.evaluate(val_loader)
+                if auc > best_auc:
+                    hyperparameter_choices[hyperparameter] = possibility
+                    best_auc = auc
+
+            """
+            Once we've tested all the different batch sizes,
+            we can make a loader with the best one.
+            """
+            if hyperparameter == "batch_size":
+                train_loader = torch.utils.data.DataLoader(
+                    train_dataset,
+                    shuffle=True,
+                    batch_size=hyperparameter_choices["batch_size"],
+                    pin_memory=True,
+                    num_workers=args.worker_count,
+                )
+
+    trainer, model = train(
+        train_loader,
+        val_loader,
+        summary_writer,
+        args.eval_frequency,
+        args.print_frequency,
+        args.log_frequency,
+        hyperparameter_choices
     )
-
-    learning_rates = [0.001, 0.005, 0.01, 0.05, 0.1]
-    best_learning_rate = 0
-    best_auc = 0
-
-    for learning_rate in learning_rates:
-        trainer, model = train(train_loader, val_loader, 10, summary_writer, 10, 10, learning_rate, 20)
-        auc = trainer.evaluate(val_loader)
-        if auc > best_auc:
-            best_auc = auc
-            best_learning_rate = learning_rate
-    #endregion
-
-    # TESTING
-    trainer, model = train(train_loader, val_loader, 10, summary_writer, 10, 10, best_learning_rate, 20)
     print("Test Results:")
     trainer.evaluate(test_loader)
 
@@ -182,27 +207,32 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
         i += 1
     return str(tb_log_dir)
 
-# Trains a model with the given data and hyperparameters
 def train(
         train_loader,
         inter_eval_loader,
-        eval_frequency,
         summary_writer,
+        eval_frequency,
         print_frequency,
         log_frequency,
-        learning_rate,
-        epochs
+        hyperparameters
 ):
     model = CNN(channels=1, class_count=50)
     criterion = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(model.parameters(), lr=hyperparameters["learning_rate"])
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
 
     trainer = Trainer(
-        model, train_loader, inter_eval_loader, criterion, optimizer, scheduler, summary_writer, DEVICE
+        model,
+        train_loader,
+        inter_eval_loader,
+        criterion,
+        optimizer,
+        scheduler,
+        summary_writer,
+        DEVICE
     )
     trainer.train(
-        epochs,
+        hyperparameters["epochs"],
         eval_frequency,
         print_frequency=print_frequency,
         log_frequency=log_frequency,
