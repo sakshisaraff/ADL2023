@@ -11,7 +11,6 @@ from torch.nn import functional as F
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from torchvision import transforms
 
 import dataset
 import evaluation
@@ -42,7 +41,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--batch-size",
-    default=10,
+    default=32,
     type=int,
     help="Number of audio examples within each batch",
 )
@@ -54,7 +53,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--val-frequency",
-    default=2,
+    default=1,
     type=int,
     help="How frequently to test the model on the validation set in number of epochs",
 )
@@ -130,7 +129,7 @@ def main(args):
             flush_secs=5
     )
     trainer = Trainer(
-        model, train_loader, val_loader, criterion, optimizer, summary_writer, DEVICE
+        model, train_loader, val_loader, test_loader, criterion, optimizer, summary_writer, DEVICE
     )
     trainer.train(
         args.epochs,
@@ -171,7 +170,6 @@ class CNN(nn.Module):
             padding="same",
             stride=1,
         )
-        padding = 0
         self.initialise_layer(self.conv2)
         #need stride 1, any padding??
         self.pool2 = nn.MaxPool1d(kernel_size=4, stride=1)
@@ -183,24 +181,17 @@ class CNN(nn.Module):
 
 
     def forward(self, audio: torch.Tensor) -> torch.Tensor:
-        #print(audio.size())
-        x = torch.mean(audio, dim=1)
-        #print(x.size())
+        x = audio
+        #x = torch.mean(audio, dim=1)
         x = F.relu(self.stride_conv(x))
-        #print(x.size())
         x = F.relu(self.conv1(x))
-        #print(x.size())
         x = self.pool1(x)
-        #print(x.size())
         x = F.relu(self.conv2(x))
-        #print(x.size())
         x = self.pool2(x)
-        #print(x.size())
         x = torch.flatten(x, start_dim = 1)
-        #print(x.size())
         x = F.relu(self.fc1(x))
         x = torch.sigmoid(self.fc2(x))
-        #print(x.size())
+        x = torch.mean(x, dim=0)
         return x
 
     @staticmethod
@@ -217,6 +208,7 @@ class Trainer:
         model: nn.Module,
         train_loader: DataLoader,
         val_loader: DataLoader,
+        test_loader: DataLoader,
         criterion: nn.Module,
         optimizer: Optimizer,
         summary_writer: SummaryWriter,
@@ -226,6 +218,7 @@ class Trainer:
         self.device = device
         self.train_loader = train_loader
         self.val_loader = val_loader
+        self.test_loader = test_loader
         self.criterion = criterion
         self.optimizer = optimizer
         self.summary_writer = summary_writer
@@ -247,25 +240,15 @@ class Trainer:
                 batch = batch.to(self.device)
                 labels = labels.to(self.device)
                 data_load_end_time = time.time()
-                logits = self.model.forward(batch)
-                loss = self.criterion(logits, labels)
+                logits = torch.empty((0, 50)).to(self.device)
+                for i in batch:
+                    logits = torch.cat((logits, torch.reshape(self.model.forward(i), (1,50))), dim=0)
+                preds = logits
+                loss = self.criterion(preds, labels)
                 loss.backward()
                 self.optimizer.step()
                 self.optimizer.zero_grad()
-
-                # with torch.no_grad():
-                #     auc = evaluation.evaluate(logits, labels)
-                #     print(auc)
-
-                # data_load_time = data_load_end_time - data_load_start_time
-                # step_time = time.time() - data_load_end_time
-                # if ((self.step + 1) % log_frequency) == 0:
-                #     self.log_metrics(epoch, accuracy, loss, data_load_time, step_time)
-                # if ((self.step + 1) % print_frequency) == 0:
-                #     self.print_metrics(epoch, accuracy, loss, data_load_time, step_time)
-
-                # self.step += 1
-                # data_load_start_time = time.time()
+                #print(f"loss: {loss:.5f}")
 
             self.summary_writer.add_scalar("epoch", epoch, self.step)
             if ((epoch + 1) % val_frequency) == 0:
@@ -305,37 +288,33 @@ class Trainer:
 
     def validate(self):
         #results = {"preds": [], "labels": []}
-        results = []
         total_loss = 0
         self.model.eval()
-
+        preds = torch.empty((0, 50)).to(self.device)
         with torch.no_grad():
-            for filename, batch, labels in self.val_loader:
+            for filename, batch, labels in self.test_loader:
+                logits = torch.empty((0, 50)).to(self.device)
                 batch = batch.to(self.device)
                 labels = labels.to(self.device)
-                logits = self.model(batch)
+                for i in batch:
+                    logits = torch.cat((logits, torch.reshape(self.model(i), (1, 50))), dim=0)
                 loss = self.criterion(logits, labels)
+                preds = torch.cat((preds, logits), dim=0)
                 total_loss += loss.item()
-                # preds = logits.argmax(dim=-1).cpu().numpy()
-                # results["preds"].extend(list(preds))
-                # results["labels"].extend(list(labels.cpu().numpy()))
-                auc = evaluation.evaluate(logits, Path("../annotations/val_labels.pkl"))
-                results.append(auc)
-        
-        print(results)
-        average_loss = total_loss / len(self.val_loader)
+            auc = evaluation.evaluate(preds, Path("../annotations/test_labels.pkl"))
+        average_loss = total_loss / len(self.test_loader)
 
-        # self.summary_writer.add_scalars(
-        #         "accuracy",
-        #         {"test": accuracy},
-        #         self.step
-        # )
+        self.summary_writer.add_scalars(
+                "area under the curve",
+                {"test": auc},
+                self.step
+        )
         self.summary_writer.add_scalars(
                 "loss",
                 {"test": average_loss},
                 self.step
         )
-        print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy * 100:2.2f}")
+        print(f"validation loss: {average_loss:.5f}, accuracy: {auc * 100:2.2f}")
 
 def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
     """Get a unique directory that hasn't been logged to before for use with a TB
