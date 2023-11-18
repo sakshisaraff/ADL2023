@@ -14,11 +14,16 @@ import dataset
 import Trainer
 import CNN
 
+if torch.cuda.is_available():
+    DEVICE = torch.device("cuda")
+else:
+    DEVICE = torch.device("cpu")
 
 torch.backends.cudnn.benchmark = True
 
 default_dataset_dir = Path.home() / ".cache" / "torch" / "datasets"
 
+# region Argument Parsing
 parser = argparse.ArgumentParser(
     description="Train a simple CNN on MagnaTagATune for End-to-End Learning",
     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -63,16 +68,27 @@ parser.add_argument(
     type=int,
     help="Number of worker processes used to load data.",
 )
-
-if torch.cuda.is_available():
-    DEVICE = torch.device("cuda")
-else:
-    DEVICE = torch.device("cpu")
+# endregion
 
 def main(args):
+    log_dir = get_summary_writer_log_dir(args)
+    print(f"Writing logs to {log_dir}")
+    summary_writer = SummaryWriter(
+        str(log_dir),
+        flush_secs=5
+    )
+
+    # region Data Loading
     path_annotations_train = Path("../annotations/train_labels.pkl")
+    path_annotations_val = Path("../annotations/val_labels.pkl")
+    path_annotations_test = Path("../annotations/test_labels.pkl")
     path_samples_train = Path("../samples/train")
+    path_samples_val = Path("../samples/val")
+    path_samples_test = Path("../samples/test")
     train_dataset = dataset.MagnaTagATune(path_annotations_train, path_samples_train)
+    val_dataset = dataset.MagnaTagATune(path_annotations_val, path_samples_val)
+    test_dataset = dataset.MagnaTagATune(path_annotations_test, path_samples_test)
+    print(train_dataset.samples_path)
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         shuffle=True,
@@ -80,21 +96,29 @@ def main(args):
         pin_memory=True,
         num_workers=args.worker_count,
     )
+    # batch_size=args.batch_size,
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset,
+        shuffle=False,
+        num_workers=args.worker_count,
+        pin_memory=True,
+    )
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset,
+        shuffle=False,
+        batch_size=args.batch_size,
+        num_workers=args.worker_count,
+        pin_memory=True,
+    )
+    # endregion
 
     model = CNN(length=args.length_conv, stride=args.stride_conv, channels=1, class_count=50)
     criterion = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
 
-    log_dir = get_summary_writer_log_dir(args)
-    print(f"Writing logs to {log_dir}")
-    summary_writer = SummaryWriter(
-            str(log_dir),
-            flush_secs=5
-    )
-
     trainer = Trainer(
-        model, train_loader, val_loader, test_loader, criterion, optimizer, scheduler, summary_writer, DEVICE
+        model, train_loader, test_loader, criterion, optimizer, scheduler, summary_writer, DEVICE
     )
     trainer.train(
         args.epochs,

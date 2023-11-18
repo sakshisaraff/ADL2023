@@ -14,8 +14,7 @@ class Trainer:
             self,
             model: nn.Module,
             train_loader: DataLoader,
-            val_loader: DataLoader,
-            test_loader: DataLoader,
+            inter_eval_loader: DataLoader,
             criterion: nn.Module,
             optimizer: Optimizer,
             scheduler: torch.optim.lr_scheduler,
@@ -25,8 +24,7 @@ class Trainer:
         self.model = model.to(device)
         self.device = device
         self.train_loader = train_loader
-        self.val_loader = val_loader
-        self.test_loader = test_loader
+        self.inter_eval_loader = inter_eval_loader
         self.criterion = criterion
         self.optimizer = optimizer
         self.scheduler = scheduler
@@ -48,6 +46,7 @@ class Trainer:
             for filename, batch, labels in self.train_loader:
                 batch = batch.to(self.device)
                 labels = labels.to(self.device)
+
                 data_load_end_time = time.time()
 
                 logits = self.model.forward(batch)
@@ -69,7 +68,7 @@ class Trainer:
 
             self.summary_writer.add_scalar("epoch", epoch, self.step)
             if ((epoch + 1) % val_frequency) == 0:
-                self.validate()
+                self.evaluate(self.inter_eval_loader)
                 self.model.train()
 
     def print_metrics(self, epoch, loss, data_load_time, step_time):
@@ -97,14 +96,16 @@ class Trainer:
             "time/data", step_time, self.step
         )
 
-    def validate(self):
+    """""
+    The purpose of this function is to evaluate our model at regular intervals during training.
+    This allows us to check in on how our training is going.
+    """
+    def evaluate(self, eval_loader: DataLoader):
         results = {"preds": []}
         total_loss = 0
         self.model.eval()
-        preds = torch.empty((0, 50)).to(self.device)
         with torch.no_grad():
-            for filename, batch, labels in self.test_loader:
-                logits = torch.empty((0, 50)).to(self.device)
+            for filename, batch, labels in eval_loader:
                 batch = batch.to(self.device)
                 labels = labels.to(self.device)
                 logits = self.model(batch)
@@ -113,7 +114,7 @@ class Trainer:
                 results["preds"].extend(list(logits))
 
         auc = evaluation.evaluate(results["preds"], Path("../annotations/test_labels.pkl"))
-        average_loss = total_loss / len(self.test_loader)
+        average_loss = total_loss / len(eval_loader)
 
         self.summary_writer.add_scalars(
             "area under the curve",
