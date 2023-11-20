@@ -11,8 +11,8 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 import dataset
-import Trainer
-import CNN
+from Trainer import Trainer
+from CNN import CNN
 
 if torch.cuda.is_available():
     DEVICE = torch.device("cuda")
@@ -86,12 +86,12 @@ def main(args):
     )
 
     # region Data Loading
-    path_annotations_train = Path("../annotations/train_labels.pkl")
-    path_annotations_val = Path("../annotations/val_labels.pkl")
-    path_annotations_test = Path("../annotations/test_labels.pkl")
-    path_samples_train = Path("../samples/train")
-    path_samples_val = Path("../samples/val")
-    path_samples_test = Path("../samples/test")
+    path_annotations_train = Path("annotations/train_labels.pkl")
+    path_annotations_val = Path("annotations/val_labels.pkl")
+    path_annotations_test = Path("annotations/test_labels.pkl")
+    path_samples_train = Path("samples/train")
+    path_samples_val = Path("samples/val")
+    path_samples_test = Path("samples/test")
     train_dataset = dataset.MagnaTagATune(path_annotations_train, path_samples_train)
     val_dataset = dataset.MagnaTagATune(path_annotations_val, path_samples_val)
     test_dataset = dataset.MagnaTagATune(path_annotations_test, path_samples_test)
@@ -119,7 +119,7 @@ def main(args):
 
     hyperparameter_choices = {
         "batch_size": args.batch_size,
-        "epochs": args.epochs,
+        "epochs": 1,
         "learning_rate": args.learning_rate
     }
 
@@ -129,15 +129,20 @@ def main(args):
     """
     if args.mode == "hyperparameter-tuning":
         hyperparameter_possibilities = {
-            "batch_size": [1, 8, 16, 32, 64, 128, 256, 512],
-            "epochs": [5, 10, 20, 40],
-            "learning_rate": [1e-3, 5e-3, 1e-2, 5e-2, 1e-1]
+            "batch_size": [100, 64, 32],
+            "learning_rate": [1e-2, 5e-2]
+            #"batch_size": [256, 128, 64, 32, 16, 8, 4, 2, 1],
+            #"epochs": [5, 10, 20, 40],
+            #"learning_rate": [1e-3, 5e-3, 1e-2, 5e-2, 1e-1]
         }
 
-        for hyperparameter, possibilities in hyperparameter_possibilities:
+        for hyperparameter, possibilities in hyperparameter_possibilities.items():
+            print(hyperparameter)
+            print(possibilities)
             best_auc = 0
             best_choice = None
             for possibility in possibilities:
+                print(possibility)
                 if hyperparameter == "batch_size":
                     train_loader = torch.utils.data.DataLoader(
                         train_dataset,
@@ -147,6 +152,7 @@ def main(args):
                         num_workers=args.worker_count,
                     )
                 hyperparameter_choices[hyperparameter] = possibility
+                print(hyperparameter_choices)
                 trainer, model = train(
                     train_loader,
                     val_loader,
