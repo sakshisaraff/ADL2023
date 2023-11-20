@@ -113,7 +113,7 @@ class Trainer:
                 total_loss += loss.item()
                 results["preds"].extend(list(logits))
 
-        auc = evaluation.evaluate(results["preds"], Path("../annotations/test_labels.pkl"))
+        auc = evaluation.evaluate(results["preds"], Path("annotations/test_labels.pkl"))
         average_loss = total_loss / len(eval_loader)
 
         self.summary_writer.add_scalars(

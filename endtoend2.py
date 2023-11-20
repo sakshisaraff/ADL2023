@@ -84,12 +84,12 @@ else:
 
 def main(args):
     #args.dataset_root.mkdir(parents=True, exist_ok=True)
-    path_annotations_train = Path("../annotations/train_labels.pkl")
-    path_annotations_val = Path("../annotations/val_labels.pkl")
-    path_annotations_test = Path("../annotations/test_labels.pkl")
-    path_samples_train = Path("../samples/train")
-    path_samples_val = Path("../samples/val")
-    path_samples_test = Path("../samples/test")
+    path_annotations_train = Path("annotations/train_labels.pkl")
+    path_annotations_val = Path("annotations/val_labels.pkl")
+    path_annotations_test = Path("annotations/test_labels.pkl")
+    path_samples_train = Path("samples/train")
+    path_samples_val = Path("samples/val")
+    path_samples_test = Path("samples/test")
     train_dataset = dataset.MagnaTagATune(path_annotations_train, path_samples_train)
     val_dataset = dataset.MagnaTagATune(path_annotations_val, path_samples_val)
     test_dataset = dataset.MagnaTagATune(path_annotations_test, path_samples_test)
@@ -306,7 +306,7 @@ class Trainer:
                 total_loss += loss.item()
                 results["preds"].extend(list(logits))
         
-        auc = evaluation.evaluate(results["preds"], Path("../annotations/test_labels.pkl"))
+        auc = evaluation.evaluate(results["preds"], Path("annotations/test_labels.pkl"))
         average_loss = total_loss / len(self.test_loader)
 
         self.summary_writer.add_scalars(

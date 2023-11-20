@@ -125,17 +125,18 @@ def main(args):
 
     """
     If you specify on the command line that you want to tune hyperparameters,
-    use grid search to alter hyperparameter_choices
+    use grid search to alter hyperparameter_choices.
     """
     if args.mode == "hyperparameter-tuning":
         hyperparameter_possibilities = {
-            "batch_size": [8, 16, 32, 64, 128, 256, 512],
+            "batch_size": [1, 8, 16, 32, 64, 128, 256, 512],
             "epochs": [5, 10, 20, 40],
             "learning_rate": [1e-3, 5e-3, 1e-2, 5e-2, 1e-1]
         }
 
         for hyperparameter, possibilities in hyperparameter_possibilities:
             best_auc = 0
+            best_choice = None
             for possibility in possibilities:
                 if hyperparameter == "batch_size":
                     train_loader = torch.utils.data.DataLoader(
@@ -145,6 +146,7 @@ def main(args):
                         pin_memory=True,
                         num_workers=args.worker_count,
                     )
+                hyperparameter_choices[hyperparameter] = possibility
                 trainer, model = train(
                     train_loader,
                     val_loader,
@@ -156,7 +158,7 @@ def main(args):
                 )
                 auc = trainer.evaluate(val_loader)
                 if auc > best_auc:
-                    hyperparameter_choices[hyperparameter] = possibility
+                    best_choice = possibility
                     best_auc = auc
 
             """
@@ -171,6 +173,7 @@ def main(args):
                     pin_memory=True,
                     num_workers=args.worker_count,
                 )
+            hyperparameter_choices[hyperparameter] = best_choice
 
     trainer, model = train(
         train_loader,
@@ -220,7 +223,6 @@ def train(
     criterion = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=hyperparameters["learning_rate"])
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
-
     trainer = Trainer(
         model,
         train_loader,
@@ -237,9 +239,7 @@ def train(
         print_frequency=print_frequency,
         log_frequency=log_frequency,
     )
-
     return trainer, model
-
 
 if __name__ == "__main__":
     main(parser.parse_args())
