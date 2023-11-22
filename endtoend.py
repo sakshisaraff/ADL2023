@@ -33,6 +33,7 @@ parser.add_argument("--dataset-root", default=default_dataset_dir)
 parser.add_argument("--log-dir", default=Path("logs"), type=Path)
 parser.add_argument("--learning-rate", default=1e-3, type=float, help="Learning rate")
 parser.add_argument("--dropout", default=0, type=float)
+parser.add_argument("--momentum", default=0.9, type=float)
 parser.add_argument(
     "--length-conv",
     default=256,
@@ -108,9 +109,6 @@ def main(args):
     train_dataset = dataset.MagnaTagATune(path_annotations_train, path_samples_train)
     val_dataset = dataset.MagnaTagATune(path_annotations_val, path_samples_val)
     test_dataset = dataset.MagnaTagATune(path_annotations_test, path_samples_test)
-
-    scaler = preprocessing.MinMaxScaler()
-    train_dataset.dataset = train_dataset.dataset
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         shuffle=True,
@@ -132,12 +130,14 @@ def main(args):
         num_workers=args.worker_count,
         pin_memory=True,
     )
+    minval, maxval = minmax(train_loader)
     # endregion
 
     hyperparameter_choices = {
         "batch_size": args.batch_size,
         "epochs": args.epochs,
-        "learning_rate": args.learning_rate
+        "learning_rate": args.learning_rate,
+        "momentum": args.momentum
     }
     print(hyperparameter_choices)
     """
@@ -146,10 +146,9 @@ def main(args):
     """
     if args.mode == "hyperparameter-tuning":
         hyperparameter_possibilities = {
-            #"learning_rate": [1e-6, 1e-4, 1e-3, 5e-2, .1]
-            #"batch_size": [256, 128, 100, 64, 32, 16, 8, 4, 2, 1],
-            "epochs": [50, 60, 75, 85, 100, 120],
-            #"learning_rate": [1e-3, 5e-3, 1e-2, 5e-2, 1e-1]
+            "learning_rate": [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 5e-2, .1]
+            #"batch_size": [128, 100, 64, 32, 16, 10],
+            #"epochs": [50, 60, 75, 85, 100, 120],
         }
 
         for hyperparameter, possibilities in hyperparameter_possibilities.items():
@@ -170,6 +169,8 @@ def main(args):
                 print(hyperparameter_choices)
                 trainer, model = train(
                     args,
+                    minval,
+                    maxval,
                     train_loader,
                     val_loader,
                     summary_writer,
@@ -179,7 +180,7 @@ def main(args):
                     hyperparameter_choices,
                     path_annotations_val,
                 )
-                auc = trainer.evaluate(path_annotations_val, val_loader)
+                auc = trainer.evaluate(minval, maxval, path_annotations_val, val_loader)
                 if auc > best_auc:
                     best_choice = possibility
                     best_auc = auc
@@ -200,6 +201,8 @@ def main(args):
 
     trainer, model = train(
         args,
+        minval,
+        maxval,
         train_loader,
         val_loader,
         summary_writer,
@@ -210,7 +213,7 @@ def main(args):
         path_annotations_val
     )
     print("Test Results:")
-    trainer.evaluate(path_annotations_test, test_loader)
+    trainer.evaluate(minval, maxval, path_annotations_test, test_loader)
 
     summary_writer.close()
 
@@ -226,8 +229,7 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
         from getting logged to the same TB log directory (which you can't easily
         untangle in TB).
     """
-    #tb_log_dir_prefix = f'CNN_bs={args.batch_size}_lr={args.learning_rate}_with_scheduler_run_'
-    tb_log_dir_prefix = f'CNN_bs={args.batch_size}_dropout={args.dropout}_lr={args.learning_rate}_with_scheduler_epochs={args.epochs}_mode={args.mode}_run_'
+    tb_log_dir_prefix = f'CNN_bs={args.batch_size}_dropout={args.dropout}_lr={args.learning_rate}_epochs={args.epochs}_mode={args.mode}_run_'
     i = 0
     while i < 1000:
         tb_log_dir = args.log_dir / (tb_log_dir_prefix + str(i))
@@ -238,6 +240,8 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
 
 def train(
         args,
+        minval,
+        maxval,
         train_loader,
         inter_eval_loader,
         summary_writer,
@@ -249,26 +253,37 @@ def train(
 ):
     model = CNN(length=args.length_conv, stride=args.stride_conv, channels=1, class_count=50, dropout=args.dropout)
     criterion = nn.BCELoss()
-    optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=0.9)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
+    optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
+    #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
     trainer = Trainer(
         model,
         train_loader,
         inter_eval_loader,
         criterion,
         optimizer,
-        scheduler,
         summary_writer,
         DEVICE
     )
     trainer.train(
         sample_path,
+        minval,
+        maxval,
         hyperparameters["epochs"],
         eval_frequency,
         print_frequency=print_frequency,
         log_frequency=log_frequency,
     )
     return trainer, model
+
+def minmax(dataloader):
+    maxval = float("-inf")
+    minval = float("inf")
+    for filename, data, label in dataloader:
+        if minval > torch.min(data):
+            minval = torch.min(data)
+        if maxval < torch.max(data):
+            maxval = torch.max(data)
+    return minval, maxval
 
 if __name__ == "__main__":
     main(parser.parse_args())
