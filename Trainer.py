@@ -1,13 +1,17 @@
 import time
 from pathlib import Path
-
+import numpy as np
 import torch
+from sklearn.metrics import roc_auc_score
 from torch import nn
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 import evaluation
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 class Trainer:
     def __init__(
@@ -33,13 +37,15 @@ class Trainer:
 
     def train(
             self,
+            sample_path,
             epochs: int,
             val_frequency: int,
             print_frequency: int = 20,
             log_frequency: int = 5,
-            start_epoch: int = 0
+            start_epoch: int = 0,
     ):
         self.model.train()
+        print(f'before: {count_parameters(self.model)}')
         for epoch in range(start_epoch, epochs):
             self.model.train()
             data_load_start_time = time.time()
@@ -56,6 +62,9 @@ class Trainer:
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
+                # with torch.no_grad():
+                #     auc = auc_train(logits, labels)
+
                 data_load_time = data_load_end_time - data_load_start_time
                 step_time = time.time() - data_load_end_time
                 if ((self.step + 1) % log_frequency) == 0:
@@ -68,8 +77,7 @@ class Trainer:
 
             self.summary_writer.add_scalar("epoch", epoch, self.step)
             if ((epoch + 1) % val_frequency) == 0:
-                self.evaluate(self.inter_eval_loader)
-                self.model.train()
+                self.evaluate(sample_path, self.inter_eval_loader)
 
     def print_metrics(self, epoch, loss, data_load_time, step_time):
         epoch_step = self.step % len(self.train_loader)
@@ -89,6 +97,11 @@ class Trainer:
             {"train": float(loss.item())},
             self.step
         )
+        # self.summary_writer.add_scalars(
+        #     "auc",
+        #     {"train": float(auc.item())},
+        #     self.step
+        # )
         self.summary_writer.add_scalar(
             "time/data", data_load_time, self.step
         )
@@ -100,7 +113,7 @@ class Trainer:
     The purpose of this function is to evaluate our model at regular intervals during training.
     This allows us to check in on how our training is going.
     """
-    def evaluate(self, eval_loader: DataLoader):
+    def evaluate(self, sample_path, eval_loader: DataLoader,):
         results = {"preds": []}
         total_loss = 0
         self.model.eval()
@@ -111,9 +124,9 @@ class Trainer:
                 logits = self.model(batch)
                 loss = self.criterion(logits, labels)
                 total_loss += loss.item()
-                results["preds"].extend(list(logits))
-
-        auc = evaluation.evaluate(results["preds"], Path("annotations/test_labels.pkl"))
+                results["preds"].extend(list(logits.cpu()))
+        
+        auc = evaluation.evaluate(results["preds"], sample_path)
         average_loss = total_loss / len(eval_loader)
 
         self.summary_writer.add_scalars(
@@ -127,5 +140,19 @@ class Trainer:
             self.step
         )
         print(f"evaluation loss: {average_loss:.5f}, auc: {auc * 100:2.2f}")
-
+        self.model.train()
         return auc
+
+
+# def auc_train(preds, labels):
+#     model_outs = []
+#     for i in range(len(preds)):
+#         model_outs.append(preds[i].cpu().numpy()) # A 50D vector that assigns probability to each class
+
+#     labels = np.array(labels.cpu()).astype(float)
+#     model_outs = np.array(model_outs)
+#     print(f"labels: {labels}")
+#     print(f"models_out: {model_outs}")
+#     auc_score = roc_auc_score(y_true=labels, y_score=model_outs)
+
+#     return auc_score

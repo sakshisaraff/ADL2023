@@ -32,6 +32,19 @@ parser = argparse.ArgumentParser(
 parser.add_argument("--dataset-root", default=default_dataset_dir)
 parser.add_argument("--log-dir", default=Path("logs"), type=Path)
 parser.add_argument("--learning-rate", default=1e-3, type=float, help="Learning rate")
+parser.add_argument("--dropout", default=0, type=float)
+parser.add_argument(
+    "--length-conv",
+    default=256,
+    type=int,
+    help="Length used in the Stride Convolution Layer",
+)
+parser.add_argument(
+    "--stride-conv",
+    default=256,
+    type=int,
+    help="Stride used in the Stride Convolution Layer",
+)
 parser.add_argument(
     "--batch-size",
     default=10,
@@ -95,6 +108,9 @@ def main(args):
     train_dataset = dataset.MagnaTagATune(path_annotations_train, path_samples_train)
     val_dataset = dataset.MagnaTagATune(path_annotations_val, path_samples_val)
     test_dataset = dataset.MagnaTagATune(path_annotations_test, path_samples_test)
+
+    scaler = preprocessing.MinMaxScaler()
+    train_dataset.dataset = train_dataset.dataset
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         shuffle=True,
@@ -105,6 +121,7 @@ def main(args):
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
         shuffle=False,
+        batch_size=args.batch_size,
         num_workers=args.worker_count,
         pin_memory=True,
     )
@@ -119,20 +136,19 @@ def main(args):
 
     hyperparameter_choices = {
         "batch_size": args.batch_size,
-        "epochs": 1,
+        "epochs": args.epochs,
         "learning_rate": args.learning_rate
     }
-
+    print(hyperparameter_choices)
     """
     If you specify on the command line that you want to tune hyperparameters,
     use grid search to alter hyperparameter_choices.
     """
     if args.mode == "hyperparameter-tuning":
         hyperparameter_possibilities = {
-            "batch_size": [100, 64, 32],
-            "learning_rate": [1e-2, 5e-2]
-            #"batch_size": [256, 128, 64, 32, 16, 8, 4, 2, 1],
-            #"epochs": [5, 10, 20, 40],
+            #"learning_rate": [1e-6, 1e-4, 1e-3, 5e-2, .1]
+            #"batch_size": [256, 128, 100, 64, 32, 16, 8, 4, 2, 1],
+            "epochs": [50, 60, 75, 85, 100, 120],
             #"learning_rate": [1e-3, 5e-3, 1e-2, 5e-2, 1e-1]
         }
 
@@ -142,7 +158,6 @@ def main(args):
             best_auc = 0
             best_choice = None
             for possibility in possibilities:
-                print(possibility)
                 if hyperparameter == "batch_size":
                     train_loader = torch.utils.data.DataLoader(
                         train_dataset,
@@ -154,15 +169,17 @@ def main(args):
                 hyperparameter_choices[hyperparameter] = possibility
                 print(hyperparameter_choices)
                 trainer, model = train(
+                    args,
                     train_loader,
                     val_loader,
                     summary_writer,
                     args.eval_frequency,
                     args.print_frequency,
                     args.log_frequency,
-                    hyperparameter_choices
+                    hyperparameter_choices,
+                    path_annotations_val,
                 )
-                auc = trainer.evaluate(val_loader)
+                auc = trainer.evaluate(path_annotations_val, val_loader)
                 if auc > best_auc:
                     best_choice = possibility
                     best_auc = auc
@@ -182,16 +199,18 @@ def main(args):
             hyperparameter_choices[hyperparameter] = best_choice
 
     trainer, model = train(
+        args,
         train_loader,
         val_loader,
         summary_writer,
         args.eval_frequency,
         args.print_frequency,
         args.log_frequency,
-        hyperparameter_choices
+        hyperparameter_choices,
+        path_annotations_val
     )
     print("Test Results:")
-    trainer.evaluate(test_loader)
+    trainer.evaluate(path_annotations_test, test_loader)
 
     summary_writer.close()
 
@@ -207,7 +226,8 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
         from getting logged to the same TB log directory (which you can't easily
         untangle in TB).
     """
-    tb_log_dir_prefix = f'CNN_bs={args.batch_size}_lr={args.learning_rate}_with_scheduler_run_'
+    #tb_log_dir_prefix = f'CNN_bs={args.batch_size}_lr={args.learning_rate}_with_scheduler_run_'
+    tb_log_dir_prefix = f'CNN_bs={args.batch_size}_dropout={args.dropout}_lr={args.learning_rate}_with_scheduler_epochs={args.epochs}_mode={args.mode}_run_'
     i = 0
     while i < 1000:
         tb_log_dir = args.log_dir / (tb_log_dir_prefix + str(i))
@@ -217,17 +237,19 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
     return str(tb_log_dir)
 
 def train(
+        args,
         train_loader,
         inter_eval_loader,
         summary_writer,
         eval_frequency,
         print_frequency,
         log_frequency,
-        hyperparameters
+        hyperparameters,
+        sample_path
 ):
-    model = CNN(channels=1, class_count=50)
+    model = CNN(length=args.length_conv, stride=args.stride_conv, channels=1, class_count=50, dropout=args.dropout)
     criterion = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=hyperparameters["learning_rate"])
+    optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=0.9)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
     trainer = Trainer(
         model,
@@ -240,6 +262,7 @@ def train(
         DEVICE
     )
     trainer.train(
+        sample_path,
         hyperparameters["epochs"],
         eval_frequency,
         print_frequency=print_frequency,
