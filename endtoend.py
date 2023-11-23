@@ -92,13 +92,6 @@ parser.add_argument(
 # endregion
 
 def main(args):
-    log_dir = get_summary_writer_log_dir(args)
-    print(f"Writing logs to {log_dir}")
-    summary_writer = SummaryWriter(
-        str(log_dir),
-        flush_secs=5
-    )
-
     # region Data Loading
     path_annotations_train = Path("annotations/train_labels.pkl")
     path_annotations_val = Path("annotations/val_labels.pkl")
@@ -130,30 +123,37 @@ def main(args):
         num_workers=args.worker_count,
         pin_memory=True,
     )
-    minval, maxval = minmax(train_loader)
     # endregion
 
+    # Values are the same for all datasets, hence we don't recalculate them for different contexts.
+    minval, maxval = minmax(train_loader)
+
+    trainer = None
     hyperparameter_choices = {
         "batch_size": args.batch_size,
-        "epochs": args.epochs,
+        "epochs": 2,
         "learning_rate": args.learning_rate,
-        "momentum": args.momentum
+        "momentum": args.momentum,
+        "dropout": args.dropout,
+        "length_conv": args.length_conv,
+        "stride_conv": args.stride_conv
     }
-    print(hyperparameter_choices)
     """
     If you specify on the command line that you want to tune hyperparameters,
     use grid search to alter hyperparameter_choices.
     """
     if args.mode == "hyperparameter-tuning":
+        scored_hyperparameter_choices = []
         hyperparameter_possibilities = {
-            "learning_rate": [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 5e-2, .1]
-            #"batch_size": [128, 100, 64, 32, 16, 10],
-            #"epochs": [50, 60, 75, 85, 100, 120],
+            #"batch_size": [],
+            "learning_rate": [0.0005, 0.001, 0.0015, 0.005, 0.01],
+            "momentum": [0.1, 0.9, 0.92, 0.94, 0.97, 0.99],
+            #"epochs": [],
+            #"dropout": [],
+            #"length_conv": [],
+            #"stride_conv": []
         }
-
         for hyperparameter, possibilities in hyperparameter_possibilities.items():
-            print(hyperparameter)
-            print(possibilities)
             best_auc = 0
             best_choice = None
             for possibility in possibilities:
@@ -173,14 +173,14 @@ def main(args):
                     maxval,
                     train_loader,
                     val_loader,
-                    summary_writer,
                     args.eval_frequency,
                     args.print_frequency,
                     args.log_frequency,
                     hyperparameter_choices,
                     path_annotations_val,
                 )
-                auc = trainer.evaluate(minval, maxval, path_annotations_val, val_loader)
+                auc = trainer.evaluate(path_annotations_val, val_loader)
+                scored_hyperparameter_choices.append((auc, hyperparameter_choices))
                 if auc > best_auc:
                     best_choice = possibility
                     best_auc = auc
@@ -198,26 +198,28 @@ def main(args):
                     num_workers=args.worker_count,
                 )
             hyperparameter_choices[hyperparameter] = best_choice
+        print("Hyperparameter tuning done")
+        print(scored_hyperparameter_choices)
+    else:
+        trainer, model = train(
+            args,
+            minval,
+            maxval,
+            train_loader,
+            val_loader,
+            args.eval_frequency,
+            args.print_frequency,
+            args.log_frequency,
+            hyperparameter_choices,
+            path_annotations_val
+        )
 
-    trainer, model = train(
-        args,
-        minval,
-        maxval,
-        train_loader,
-        val_loader,
-        summary_writer,
-        args.eval_frequency,
-        args.print_frequency,
-        args.log_frequency,
-        hyperparameter_choices,
-        path_annotations_val
-    )
+    print("Evaluating against test data...")
+    print(hyperparameter_choices)
     print("Test Results:")
-    trainer.evaluate(minval, maxval, path_annotations_test, test_loader)
+    trainer.evaluate(path_annotations_test, test_loader)
 
-    summary_writer.close()
-
-def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
+def get_summary_writer_log_dir(args: argparse.Namespace, hyperparameters) -> str:
     """Get a unique directory that hasn't been logged to before for use with a TB
     SummaryWriter.
 
@@ -229,7 +231,7 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
         from getting logged to the same TB log directory (which you can't easily
         untangle in TB).
     """
-    tb_log_dir_prefix = f'CNN_bs={args.batch_size}_dropout={args.dropout}_lr={args.learning_rate}_epochs={args.epochs}_mode={args.mode}_run_'
+    tb_log_dir_prefix = f'CNN_bs={hyperparameters["batch_size"]}_dropout={hyperparameters["dropout"]}_lr={hyperparameters["learning_rate"]}_epochs={hyperparameters["epochs"]}_run_'
     i = 0
     while i < 1000:
         tb_log_dir = args.log_dir / (tb_log_dir_prefix + str(i))
@@ -244,14 +246,21 @@ def train(
         maxval,
         train_loader,
         inter_eval_loader,
-        summary_writer,
         eval_frequency,
         print_frequency,
         log_frequency,
         hyperparameters,
         sample_path
 ):
-    model = CNN(length=args.length_conv, stride=args.stride_conv, channels=1, class_count=50, dropout=args.dropout)
+    log_dir = get_summary_writer_log_dir(args, hyperparameters)
+    print(f"Writing logs to {log_dir}")
+    summary_writer = SummaryWriter(
+        str(log_dir),
+        flush_secs=5
+    )
+    print("Start of Training")
+    print("Hyperparameters: " + str(hyperparameters))
+    model = CNN(length=args.length_conv, stride=args.stride_conv, channels=1, class_count=50, dropout=args.dropout, minval=minval, maxval=maxval)
     criterion = nn.BCELoss()
     optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
     #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
@@ -266,13 +275,12 @@ def train(
     )
     trainer.train(
         sample_path,
-        minval,
-        maxval,
         hyperparameters["epochs"],
         eval_frequency,
         print_frequency=print_frequency,
         log_frequency=log_frequency,
     )
+    summary_writer.close()
     return trainer, model
 
 def minmax(dataloader):

@@ -4,10 +4,10 @@
 #SBATCH --partition=teach_gpu
 #SBATCH --nodes=1
 #SBATCH --account=COMS030144
-#SBATCH -o ./log_%j.out # STDOUT out
-#SBATCH -e ./log_%j.err # STDERR out
+#SBATCH -o ./log.out # STDOUT out
+#SBATCH -e ./log.err # STDERR out
 #SBATCH --gres=gpu:1
-#SBATCH --time=0:10:00
+#SBATCH --time=1:00:00
 #SBATCH --mem=16GB
 
 # get rid of any modules already loaded

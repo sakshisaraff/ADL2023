@@ -37,8 +37,6 @@ class Trainer:
     def train(
             self,
             sample_path,
-            minval: int,
-            maxval: int,
             epochs: int,
             val_frequency: int,
             print_frequency: int = 20,
@@ -51,7 +49,6 @@ class Trainer:
             self.model.train()
             data_load_start_time = time.time()
             for filename, batch, labels in self.train_loader:
-                batch = (batch - minval)/(maxval - minval)*2 - 1
                 batch = batch.to(self.device)
                 labels = labels.to(self.device)
 
@@ -79,7 +76,7 @@ class Trainer:
 
             self.summary_writer.add_scalar("epoch", epoch, self.step)
             if ((epoch + 1) % val_frequency) == 0:
-                self.evaluate(minval, maxval, sample_path, self.inter_eval_loader)
+                self.evaluate(sample_path, self.inter_eval_loader)
 
     def print_metrics(self, epoch, loss, data_load_time, step_time):
         epoch_step = self.step % len(self.train_loader)
@@ -115,13 +112,12 @@ class Trainer:
     The purpose of this function is to evaluate our model at regular intervals during training.
     This allows us to check in on how our training is going.
     """
-    def evaluate(self, minval, maxval, sample_path, eval_loader: DataLoader,):
+    def evaluate(self, sample_path, eval_loader: DataLoader,):
         results = {"preds": []}
         total_loss = 0
         self.model.eval()
         with torch.no_grad():
             for filename, batch, labels in eval_loader:
-                batch = (batch - minval)/(maxval - minval)
                 batch = batch.to(self.device)
                 labels = labels.to(self.device)
                 logits = self.model(batch)

@@ -1,10 +1,11 @@
 import torch
 from torch import nn
-from torch.nn import functional as F
 
 class CNN(nn.Module):
-    def __init__(self, length: int, stride: int, channels: int, class_count: int, dropout: float):
+    def __init__(self, length: int, stride: int, channels: int, class_count: int, dropout: float, minval: int, maxval: int):
         super().__init__()
+        self.minval = minval
+        self.maxval = maxval
         self.class_count = class_count
         embeddings = 34950
         self.dropout = nn.Dropout(p=dropout)
@@ -65,6 +66,7 @@ class CNN(nn.Module):
 
     def forward(self, audio: torch.Tensor) -> torch.Tensor:
         x = audio
+        x = (x - self.minval) / (self.maxval - self.minval) * 2 - 1
         x = torch.flatten(x, start_dim = 0, end_dim=1)
         x = self.convolution(x)
         x = torch.flatten(x, start_dim = 1)
