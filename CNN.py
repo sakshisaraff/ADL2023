@@ -2,10 +2,11 @@ import torch
 from torch import nn
 
 class CNN(nn.Module):
-    def __init__(self, length: int, stride: int, channels: int, class_count: int, dropout: float, minval: int, maxval: int):
+    def __init__(self, length: int, stride: int, channels: int, class_count: int, dropout: float, minval: int, maxval: int, normalisation):
         super().__init__()
         self.minval = minval
         self.maxval = maxval
+        self.normalisation = normalisation
         self.class_count = class_count
         embeddings = 34950
         self.dropout = nn.Dropout(p=dropout)
@@ -66,8 +67,16 @@ class CNN(nn.Module):
 
     def forward(self, audio: torch.Tensor) -> torch.Tensor:
         x = audio
-        x = (x - self.minval) / (self.maxval - self.minval) * 2 - 1
+        if self.normalisation == "minmax":
+            x = (x - self.minval) / (self.maxval - self.minval) * 2 - 1
+
         x = torch.flatten(x, start_dim = 0, end_dim=1)
+
+        if self.normalisation == "Sakshi":
+            mean = torch.mean(x, dim=0)
+            std = torch.std(x, dim=0)
+            x = (x - mean) / std
+
         x = self.convolution(x)
         x = torch.flatten(x, start_dim = 1)
         x = self.dense(x)
