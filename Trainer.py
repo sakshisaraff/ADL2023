@@ -13,6 +13,25 @@ import evaluation
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
+class StandardScaler:
+
+    def __init__(self, mean=None, std=None, epsilon=1e-7):
+        self.mean = mean
+        self.std = std
+        self.epsilon = epsilon
+
+    def fit(self, values):
+        dims = list(range(values.dim() - 1))
+        self.mean = torch.mean(values, dim=dims)
+        self.std = torch.std(values, dim=dims)
+
+    def transform(self, values):
+        return (values - self.mean) / (self.std + self.epsilon)
+
+    def fit_transform(self, values):
+        self.fit(values)
+        return self.transform(values)
+
 class Trainer:
     def __init__(
             self,
@@ -52,7 +71,6 @@ class Trainer:
             for filename, batch, labels in self.train_loader:
                 batch = batch.to(self.device)
                 labels = labels.to(self.device)
-
                 data_load_end_time = time.time()
 
                 logits = self.model.forward(batch)

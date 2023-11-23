@@ -66,6 +66,11 @@ class CNN(nn.Module):
     def forward(self, audio: torch.Tensor) -> torch.Tensor:
         x = audio
         x = torch.flatten(x, start_dim = 0, end_dim=1)
+        mean = torch.mean(x, dim=0)
+        std = torch.std(x, dim=0) 
+        # print(mean)
+        # print(std)
+        x = (x - mean) / std
         # x = F.relu(self.stride_conv(x))
         # x = F.relu(self.conv1(x))
         # x = self.pool1(x)

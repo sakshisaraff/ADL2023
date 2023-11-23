@@ -32,6 +32,7 @@ parser = argparse.ArgumentParser(
 parser.add_argument("--dataset-root", default=default_dataset_dir)
 parser.add_argument("--log-dir", default=Path("logs"), type=Path)
 parser.add_argument("--learning-rate", default=1e-3, type=float, help="Learning rate")
+parser.add_argument("--momentum", default=0.9, type=float, help="Momentum")
 parser.add_argument("--dropout", default=0, type=float)
 parser.add_argument(
     "--length-conv",
@@ -109,7 +110,8 @@ def main(args):
     val_dataset = dataset.MagnaTagATune(path_annotations_val, path_samples_val)
     test_dataset = dataset.MagnaTagATune(path_annotations_test, path_samples_test)
 
-    scaler = preprocessing.MinMaxScaler()
+    # scaler = preprocessing.MinMaxScaler()
+
     train_dataset.dataset = train_dataset.dataset
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
@@ -249,7 +251,7 @@ def train(
 ):
     model = CNN(length=args.length_conv, stride=args.stride_conv, channels=1, class_count=50, dropout=args.dropout)
     criterion = nn.BCELoss()
-    optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=0.9)
+    optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=args.momentum)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
     trainer = Trainer(
         model,
