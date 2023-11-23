@@ -109,9 +109,6 @@ def main(args):
     train_dataset = dataset.MagnaTagATune(path_annotations_train, path_samples_train)
     val_dataset = dataset.MagnaTagATune(path_annotations_val, path_samples_val)
     test_dataset = dataset.MagnaTagATune(path_annotations_test, path_samples_test)
-
-    # scaler = preprocessing.MinMaxScaler()
-
     train_dataset.dataset = train_dataset.dataset
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
@@ -139,7 +136,8 @@ def main(args):
     hyperparameter_choices = {
         "batch_size": args.batch_size,
         "epochs": args.epochs,
-        "learning_rate": args.learning_rate
+        "learning_rate": args.learning_rate,
+        "momentum": args.momentum,
     }
     print(hyperparameter_choices)
     """
@@ -148,9 +146,9 @@ def main(args):
     """
     if args.mode == "hyperparameter-tuning":
         hyperparameter_possibilities = {
-            #"learning_rate": [1e-6, 1e-4, 1e-3, 5e-2, .1]
+            "learning_rate": [0.005, 0.001, 0.01, 0.012, 0.02, 0.05, 0.1]
             #"batch_size": [256, 128, 100, 64, 32, 16, 8, 4, 2, 1],
-            "epochs": [50, 60, 75, 85, 100, 120],
+            #"epochs": [50, 60, 75, 85, 100, 120],
             #"learning_rate": [1e-3, 5e-3, 1e-2, 5e-2, 1e-1]
         }
 
@@ -199,6 +197,7 @@ def main(args):
                     num_workers=args.worker_count,
                 )
             hyperparameter_choices[hyperparameter] = best_choice
+            print(hyperparameter_choices)
 
     trainer, model = train(
         args,
@@ -228,8 +227,7 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
         from getting logged to the same TB log directory (which you can't easily
         untangle in TB).
     """
-    #tb_log_dir_prefix = f'CNN_bs={args.batch_size}_lr={args.learning_rate}_with_scheduler_run_'
-    tb_log_dir_prefix = f'CNN_bs={args.batch_size}_dropout={args.dropout}_lr={args.learning_rate}_with_scheduler_epochs={args.epochs}_mode={args.mode}_run_'
+    tb_log_dir_prefix = f'CNN_bs={args.batch_size}_dropout={args.dropout}_lr={args.learning_rate}_momentum={args.momentum}_epochs={args.epochs}_mode={args.mode}_run_'
     i = 0
     while i < 1000:
         tb_log_dir = args.log_dir / (tb_log_dir_prefix + str(i))
@@ -251,15 +249,14 @@ def train(
 ):
     model = CNN(length=args.length_conv, stride=args.stride_conv, channels=1, class_count=50, dropout=args.dropout)
     criterion = nn.BCELoss()
-    optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=args.momentum)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
+    optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
+    #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
     trainer = Trainer(
         model,
         train_loader,
         inter_eval_loader,
         criterion,
         optimizer,
-        scheduler,
         summary_writer,
         DEVICE
     )

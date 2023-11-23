@@ -40,7 +40,6 @@ class Trainer:
             inter_eval_loader: DataLoader,
             criterion: nn.Module,
             optimizer: Optimizer,
-            scheduler: torch.optim.lr_scheduler,
             summary_writer: SummaryWriter,
             device: torch.device,
     ):
@@ -50,7 +49,6 @@ class Trainer:
         self.inter_eval_loader = inter_eval_loader
         self.criterion = criterion
         self.optimizer = optimizer
-        self.scheduler = scheduler
         self.summary_writer = summary_writer
         self.step = 0
 
@@ -80,9 +78,6 @@ class Trainer:
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
-                # with torch.no_grad():
-                #     auc = auc_train(logits, labels)
-
                 data_load_time = data_load_end_time - data_load_start_time
                 step_time = time.time() - data_load_end_time
                 if ((self.step + 1) % log_frequency) == 0:
@@ -91,7 +86,7 @@ class Trainer:
                     self.print_metrics(epoch, loss, data_load_time, step_time)
                 self.step += 1
                 data_load_start_time = time.time()
-            self.scheduler.step()
+            #self.scheduler.step()
 
             self.summary_writer.add_scalar("epoch", epoch, self.step)
             if ((epoch + 1) % val_frequency) == 0:
