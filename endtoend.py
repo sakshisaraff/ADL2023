@@ -13,6 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 import dataset
 from Trainer import Trainer
 from CNN import CNN
+from CNN_extension import CNN_extension
 
 if torch.cuda.is_available():
     DEVICE = torch.device("cuda")
@@ -47,6 +48,12 @@ parser.add_argument(
     help="Stride used in the Stride Convolution Layer",
 )
 parser.add_argument(
+    "--model",
+    default=0,
+    type=int,
+    help="CNN or extensions",
+)
+parser.add_argument(
     "--batch-size",
     default=10,
     type=int,
@@ -66,7 +73,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--eval-frequency",
-    default=3,
+    default=2,
     type=int,
     help="How frequently to evaluate the model in number of epochs",
 )
@@ -144,6 +151,8 @@ def main(args):
         "epochs": args.epochs,
         "learning_rate": args.learning_rate,
         "momentum": args.momentum,
+        "dropout": args.dropout,
+        "model": args.model,
     }
     print(hyperparameter_choices)
     """
@@ -253,7 +262,10 @@ def train(
         hyperparameters,
         sample_path
 ):
-    model = CNN(length=args.length_conv, stride=args.stride_conv, out_channels=args.outchannel_stride, class_count=50, dropout=args.dropout)
+    if args.model == 0:
+        model = CNN(length=args.length_conv, stride=args.stride_conv, out_channels=args.outchannel_stride, class_count=50)
+    else:
+        model = CNN_extension(length=args.length_conv, stride=args.stride_conv, out_channels=args.outchannel_stride, class_count=50, dropout=args.dropout)
     criterion = nn.BCELoss()
     optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
     #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
