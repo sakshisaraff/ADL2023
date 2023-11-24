@@ -255,7 +255,7 @@ def train(
 ):
     model = CNN(length=args.length_conv, stride=args.stride_conv, out_channels=args.outchannel_stride, class_count=50, dropout=args.dropout)
     criterion = nn.BCELoss()
-    optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"], weight_decay=1e-2)
+    optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
     #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
     trainer = Trainer(
         model,
