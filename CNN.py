@@ -11,7 +11,7 @@ class CNN(nn.Module):
         embeddings = 34950
         self.dropout = nn.Dropout(p=dropout)
         self.stride_conv = nn.Conv1d(
-            in_channels=channels,
+            in_channels=1,
             out_channels=out_channels,
             kernel_size=length,
             stride=stride,
