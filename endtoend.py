@@ -60,7 +60,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--eval-frequency",
-    default=1,
+    default=2,
     type=int,
     help="How frequently to evaluate the model in number of epochs",
 )
@@ -146,10 +146,10 @@ def main(args):
     """
     if args.mode == "hyperparameter-tuning":
         hyperparameter_possibilities = {
-            "learning_rate": [0.005, 0.001, 0.01, 0.012, 0.02, 0.05, 0.1]
+            #"learning_rate": [0.005, 0.001, 0.01, 0.012, 0.015, 0.02, 0.05, 0.1, 0.2]
             #"batch_size": [256, 128, 100, 64, 32, 16, 8, 4, 2, 1],
             #"epochs": [50, 60, 75, 85, 100, 120],
-            #"learning_rate": [1e-3, 5e-3, 1e-2, 5e-2, 1e-1]
+            "momentum": [0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99]
         }
 
         for hyperparameter, possibilities in hyperparameter_possibilities.items():

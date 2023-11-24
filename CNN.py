@@ -10,7 +10,7 @@ class CNN(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
         self.stride_conv = nn.Conv1d(
             in_channels=channels,
-            out_channels=1,
+            out_channels=16,
             kernel_size=length,
             stride=stride,
         )
@@ -21,7 +21,7 @@ class CNN(nn.Module):
             in_channels=self.stride_conv.out_channels,
             out_channels=32,
             kernel_size=8,
-            padding="same",
+            padding=4,
             stride=1,
         )
         self.initialise_layer(self.conv1)
@@ -32,14 +32,15 @@ class CNN(nn.Module):
             in_channels=self.conv1.out_channels,
             out_channels=32,
             kernel_size=8,
-            padding="same",
+            padding=4,
             stride=1,
         )
         self.initialise_layer(self.conv2)
         self.pool2 = nn.MaxPool1d(kernel_size=4, stride=1)
         self.l_norm2 = nn.LayerNorm([self.conv2.out_channels, embeddings//length - 3])
         self.b_norm2 = nn.BatchNorm1d(num_features=self.conv2.out_channels)
-        self.fc1 = nn.Linear(4160, 100)
+        self.fc1 = nn.Linear(4224, 100)
+        #self.fc1 = nn.Linear(4160, 100)
         self.initialise_layer(self.fc1)
         self.l_norm3 = nn.LayerNorm([100])
         self.norm3 = nn.BatchNorm1d(num_features=100)
