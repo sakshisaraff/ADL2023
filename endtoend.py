@@ -55,6 +55,12 @@ parser.add_argument(
     help="Number of audio examples within each batch",
 )
 parser.add_argument(
+    "--outchannel-stride",
+    default=16,
+    type=int,
+    help="Out channels in the Stride Convolution",
+)
+parser.add_argument(
     "--epochs",
     default=20,
     type=int,
@@ -62,7 +68,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--eval-frequency",
-    default=1,
+    default=3,
     type=int,
     help="How frequently to evaluate the model in number of epochs",
 )
@@ -271,7 +277,7 @@ def train(
     )
     print("Start of Training")
     print("Hyperparameters: " + str(hyperparameters))
-    model = CNN(length=args.length_conv, stride=args.stride_conv, channels=1, class_count=50, dropout=args.dropout, minval=minval, maxval=maxval, normalisation=hyperparameters["normalisation"])
+    model = CNN(length=args.length_conv, stride=args.stride_conv, channels=1, class_count=50, dropout=args.dropout, minval=minval, maxval=maxval, normalisation=hyperparameters["normalisation"], out_channels=args.outchannel_stride)
     criterion = nn.BCELoss()
     optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
     #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
