@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import io
 from pathlib import Path
 from multiprocessing import cpu_count
 
@@ -32,7 +33,6 @@ parser = argparse.ArgumentParser(
 parser.add_argument("--dataset-root", default=default_dataset_dir)
 parser.add_argument("--log-dir", default=Path("logs"), type=Path)
 parser.add_argument("--learning-rate", default=1e-3, type=float, help="Learning rate")
-parser.add_argument("--momentum", default=0.9, type=float, help="Momentum")
 parser.add_argument("--dropout", default=0, type=float)
 parser.add_argument("--momentum", default=0.9, type=float)
 parser.add_argument("--normalisation", default="Sakshi", type=str)
@@ -133,7 +133,7 @@ def main(args):
     trainer = None
     hyperparameter_choices = {
         "batch_size": args.batch_size,
-        "epochs": 2,
+        "epochs": 1,
         "learning_rate": args.learning_rate,
         "momentum": args.momentum,
         "dropout": args.dropout,
@@ -149,9 +149,11 @@ def main(args):
         scored_hyperparameter_choices = []
         hyperparameter_possibilities = {
             #"batch_size": [],
-            "learning_rate": [0.0005, 0.001, 0.0015, 0.005, 0.01],
-            "momentum": [0.1, 0.9, 0.92, 0.94, 0.97, 0.99],
-            "normalisation": ["minmax", "Sakshi"]
+            "learning_rate": [0.001, 0.005],
+            #"normalisation": ["minmax", "Sakshi"]
+            #"learning_rate": [0.0005, 0.001, 0.0015, 0.005, 0.01],
+            #'"momentum": [0.1, 0.9, 0.92, 0.94, 0.97, 0.99],
+            #"normalisation": ["minmax", "Sakshi"]
             #"epochs": [],
             #"dropout": [],
             #"length_conv": [],
@@ -170,7 +172,6 @@ def main(args):
                         num_workers=args.worker_count,
                     )
                 hyperparameter_choices[hyperparameter] = possibility
-                print(hyperparameter_choices)
                 trainer, model = train(
                     args,
                     minval,
@@ -184,7 +185,7 @@ def main(args):
                     path_annotations_val,
                 )
                 auc = trainer.evaluate(path_annotations_val, val_loader)
-                scored_hyperparameter_choices.append((auc, hyperparameter_choices))
+                scored_hyperparameter_choices.append((auc, hyperparameter_choices.copy()))
                 if auc > best_auc:
                     best_choice = possibility
                     best_auc = auc
@@ -235,7 +236,13 @@ def get_summary_writer_log_dir(args: argparse.Namespace, hyperparameters) -> str
         from getting logged to the same TB log directory (which you can't easily
         untangle in TB).
     """
-    tb_log_dir_prefix = f'CNN_bs={hyperparameters["batch_size"]}_dropout={hyperparameters["dropout"]}_lr={hyperparameters["learning_rate"]}_epochs={hyperparameters["epochs"]}_normalisation={hyperparameters["normalisation"]}_run_'
+
+    tb_log_dir_prefix = io.StringIO()
+    tb_log_dir_prefix.write(f'CNN_')
+    for hyperparameter, value in hyperparameters.items():
+        tb_log_dir_prefix.write(f'{hyperparameter}={value}_')
+    tb_log_dir_prefix.write(f'run_')
+    tb_log_dir_prefix = tb_log_dir_prefix.getvalue()
     i = 0
     while i < 1000:
         tb_log_dir = args.log_dir / (tb_log_dir_prefix + str(i))
@@ -264,7 +271,7 @@ def train(
     )
     print("Start of Training")
     print("Hyperparameters: " + str(hyperparameters))
-    model = CNN(length=args.length_conv, stride=args.stride_conv, channels=1, class_count=50, dropout=args.dropout, minval=minval, maxval=maxval, normalisation=["normalisation"])
+    model = CNN(length=args.length_conv, stride=args.stride_conv, channels=1, class_count=50, dropout=args.dropout, minval=minval, maxval=maxval, normalisation=hyperparameters["normalisation"])
     criterion = nn.BCELoss()
     optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
     #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
