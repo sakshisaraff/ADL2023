@@ -137,15 +137,29 @@ def main(args):
     minval, maxval = minmax(train_loader)
 
     trainer = None
+    # Ideally we make this from the command line args
+    # We can iterate through args
+    # How do we only include the args that relate to hyperparameters though?
+    # Right now when we add a hyperparameter we need to:
+        # Add it to hyperparameter_possibilities
+        # Add it to hyperparameter_choices REMOVE
+        # Add it to args
+        # Pass it to the right thing in train() REMOVE
+        # Make use of it in the correct place
+    # Ideally, we just want to:
+        # Add it to args
+        # Make use of it in the correct place
+        # Add it to hyperparameter_possibilities if we intend to hyperparameter tune it
     hyperparameter_choices = {
         "batch_size": args.batch_size,
-        "epochs": 1,
+        "epochs": args.epochs,
         "learning_rate": args.learning_rate,
         "momentum": args.momentum,
         "dropout": args.dropout,
         "length_conv": args.length_conv,
         "stride_conv": args.stride_conv,
-        "normalisation": args.normalisation
+        "normalisation": args.normalisation,
+        "outchannel_stride": args.outchannel_stride
     }
     """
     If you specify on the command line that you want to tune hyperparameters,
@@ -155,7 +169,7 @@ def main(args):
         scored_hyperparameter_choices = []
         hyperparameter_possibilities = {
             #"batch_size": [],
-            "learning_rate": [0.001, 0.005],
+            "learning_rate": [0.005, 0.01, 0.025],
             #"normalisation": ["minmax", "Sakshi"]
             #"learning_rate": [0.0005, 0.001, 0.0015, 0.005, 0.01],
             #'"momentum": [0.1, 0.9, 0.92, 0.94, 0.97, 0.99],
@@ -277,7 +291,7 @@ def train(
     )
     print("Start of Training")
     print("Hyperparameters: " + str(hyperparameters))
-    model = CNN(length=args.length_conv, stride=args.stride_conv, channels=1, class_count=50, dropout=args.dropout, minval=minval, maxval=maxval, normalisation=hyperparameters["normalisation"], out_channels=args.outchannel_stride)
+    model = CNN(length=hyperparameters["length_conv"], stride=hyperparameters["stride_conv"], channels=1, class_count=50, dropout=hyperparameters["dropout"], minval=minval, maxval=maxval, normalisation=hyperparameters["normalisation"], out_channels=hyperparameters["outchannel_stride"])
     criterion = nn.BCELoss()
     optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
     #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
