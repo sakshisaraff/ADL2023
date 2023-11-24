@@ -3,14 +3,14 @@ from torch import nn
 from torch.nn import functional as F
 
 class CNN(nn.Module):
-    def __init__(self, length: int, stride: int, channels: int, class_count: int, dropout: float):
+    def __init__(self, length: int, stride: int, out_channels: int, class_count: int, dropout: float):
         super().__init__()
         self.class_count = class_count
         embeddings = 34950
         self.dropout = nn.Dropout(p=dropout)
         self.stride_conv = nn.Conv1d(
             in_channels=channels,
-            out_channels=16,
+            out_channels=out_channels,
             kernel_size=length,
             stride=stride,
         )
@@ -40,7 +40,6 @@ class CNN(nn.Module):
         self.l_norm2 = nn.LayerNorm([self.conv2.out_channels, embeddings//length - 3])
         self.b_norm2 = nn.BatchNorm1d(num_features=self.conv2.out_channels)
         self.fc1 = nn.Linear(4224, 100)
-        #self.fc1 = nn.Linear(4160, 100)
         self.initialise_layer(self.fc1)
         self.l_norm3 = nn.LayerNorm([100])
         self.norm3 = nn.BatchNorm1d(num_features=100)
