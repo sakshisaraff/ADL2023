@@ -7,9 +7,10 @@ class CNN(nn.Module):
         super().__init__()
         self.class_count = class_count
         embeddings = 34950
+        padding_conv = 4
         self.dropout = nn.Dropout(p=dropout)
         self.stride_conv = nn.Conv1d(
-            in_channels=channels,
+            in_channels=1,
             out_channels=out_channels,
             kernel_size=length,
             stride=stride,
@@ -21,7 +22,7 @@ class CNN(nn.Module):
             in_channels=self.stride_conv.out_channels,
             out_channels=32,
             kernel_size=8,
-            padding=4,
+            padding=padding_conv,
             stride=1,
         )
         self.initialise_layer(self.conv1)
@@ -32,14 +33,19 @@ class CNN(nn.Module):
             in_channels=self.conv1.out_channels,
             out_channels=32,
             kernel_size=8,
-            padding=4,
+            padding=padding_conv,
             stride=1,
         )
         self.initialise_layer(self.conv2)
         self.pool2 = nn.MaxPool1d(kernel_size=4, stride=1)
         self.l_norm2 = nn.LayerNorm([self.conv2.out_channels, embeddings//length - 3])
         self.b_norm2 = nn.BatchNorm1d(num_features=self.conv2.out_channels)
-        self.fc1 = nn.Linear(4224, 100)
+        stride_conv_output = int((embeddings - length)/stride + 1)
+        conv1_output = (stride_conv_output - 8 + padding_conv*2) + 1
+        pool1_output = (conv1_output - 4) + 1
+        conv2_output = (pool1_output - 8 + padding_conv*2) + 1
+        pool2_output = (conv2_output - 4) + 1
+        self.fc1 = nn.Linear(pool2_output*self.conv2.out_channels, 100)
         self.initialise_layer(self.fc1)
         self.l_norm3 = nn.LayerNorm([100])
         self.norm3 = nn.BatchNorm1d(num_features=100)
