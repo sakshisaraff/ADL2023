@@ -291,7 +291,17 @@ def train(
     )
     print("Start of Training")
     print("Hyperparameters: " + str(hyperparameters))
-    model = CNN(length=hyperparameters["length_conv"], stride=hyperparameters["stride_conv"], channels=1, class_count=50, dropout=hyperparameters["dropout"], minval=minval, maxval=maxval, normalisation=hyperparameters["normalisation"], out_channels=hyperparameters["outchannel_stride"])
+    model = CNN(
+        length=hyperparameters["length_conv"],
+        stride=hyperparameters["stride_conv"],
+        channels=1,
+        class_count=50,
+        dropout=hyperparameters["dropout"],
+        minval=minval,
+        maxval=maxval,
+        normalisation=hyperparameters["normalisation"],
+        out_channels=hyperparameters["outchannel_stride"]
+    )
     criterion = nn.BCELoss()
     optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
     #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
@@ -304,8 +314,17 @@ def train(
         summary_writer,
         DEVICE
     )
+    model_path = io.StringIO()
+    model_path.write(f'models/CNN_')
+    for hyperparameter, value in hyperparameters.items():
+        model_path.write(f'{hyperparameter}={value}_')
+    model_path.write(f'run_')
+    model_path = model_path.getvalue()
+    model_path = Path(model_path)
     trainer.train(
+        hyperparameters,
         sample_path,
+        model_path,
         hyperparameters["epochs"],
         eval_frequency,
         print_frequency=print_frequency,

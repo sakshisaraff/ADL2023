@@ -7,7 +7,7 @@
 #SBATCH -o ./log.out # STDOUT out
 #SBATCH -e ./log.err # STDERR out
 #SBATCH --gres=gpu:1
-#SBATCH --time=1:00:00
+#SBATCH --time=24:00:00
 #SBATCH --mem=16GB
 
 # get rid of any modules already loaded

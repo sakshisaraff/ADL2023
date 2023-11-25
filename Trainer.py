@@ -35,15 +35,18 @@ class Trainer:
 
     def train(
             self,
+            hyperparameter_choices,
             sample_path,
+            model_path: Path,
             epochs: int,
             val_frequency: int,
             print_frequency: int = 20,
             log_frequency: int = 5,
-            start_epoch: int = 0,
+            start_epoch: int = 0
     ):
         self.model.train()
         print(f'before: {count_parameters(self.model)}')
+        best_auc = 0
         for epoch in range(start_epoch, epochs):
             self.model.train()
             data_load_start_time = time.time()
@@ -65,13 +68,24 @@ class Trainer:
                     self.log_metrics(epoch, loss, data_load_time, step_time)
                 if ((self.step + 1) % print_frequency) == 0:
                     self.print_metrics(epoch, loss, data_load_time, step_time)
+
                 self.step += 1
                 data_load_start_time = time.time()
             #self.scheduler.step()
 
             self.summary_writer.add_scalar("epoch", epoch, self.step)
             if ((epoch + 1) % val_frequency) == 0:
-                self.evaluate(sample_path, self.inter_eval_loader)
+                auc = self.evaluate(sample_path, self.inter_eval_loader)
+                if auc >= best_auc:
+                    print("Saving model.")
+                    torch.save({
+                        'args': hyperparameter_choices,
+                        'model': self.model.state_dict(),
+                        'auc': auc,
+                        'epoch': epoch
+                    }, model_path)
+
+
 
     def print_metrics(self, epoch, loss, data_load_time, step_time):
         epoch_step = self.step % len(self.train_loader)
