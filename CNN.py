@@ -1,15 +1,22 @@
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 class CNN(nn.Module):
-    def __init__(self, length: int, stride: int, channels: int, class_count: int, dropout: float, minval: int, maxval: int, normalisation, out_channels: int):
+    def __init__(self, length: int, stride: int, channels: int, class_count: int, minval: int, maxval: int, normalisation, out_channels: int):
         super().__init__()
+        self.kwargs = {'length': length, "stride": stride, "channels": channels, "class_count": class_count, "minval": minval, "maxval": maxval, "normalisation": normalisation, "out_channels": out_channels}
         self.minval = minval
         self.maxval = maxval
         self.normalisation = normalisation
         self.class_count = class_count
         embeddings = 34950
         padding_conv = 4
+        stride_conv_output = int((embeddings - length)//stride + 1)
+        conv1_output = (stride_conv_output - 8 + padding_conv*2) + 1
+        pool1_output = (conv1_output - 4) + 1
+        conv2_output = (pool1_output - 8 + padding_conv*2) + 1
+        pool2_output = (conv2_output - 4) + 1
         self.stride_conv = nn.Conv1d(
             in_channels=1,
             out_channels=out_channels,
@@ -35,15 +42,8 @@ class CNN(nn.Module):
         )
         self.initialise_layer(self.conv2)
         self.pool2 = nn.MaxPool1d(kernel_size=4, stride=1)
-        stride_conv_output = int((embeddings - length)/stride + 1)
-        conv1_output = (stride_conv_output - 8 + padding_conv*2) + 1
-        pool1_output = (conv1_output - 4) + 1
-        conv2_output = (pool1_output - 8 + padding_conv*2) + 1
-        pool2_output = (conv2_output - 4) + 1
         self.fc1 = nn.Linear(pool2_output*self.conv2.out_channels, 100)
         self.initialise_layer(self.fc1)
-        self.l_norm3 = nn.LayerNorm([100])
-        self.norm3 = nn.BatchNorm1d(num_features=100)
         self.fc2 = nn.Linear(100, self.class_count)
         self.initialise_layer(self.fc2)
 

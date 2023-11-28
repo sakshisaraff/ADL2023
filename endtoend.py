@@ -51,8 +51,8 @@ parser.add_argument(
 )
 parser.add_argument(
     "--model",
-    default=0,
-    type=int,
+    default="Basic",
+    type=str,
     help="CNN or extensions",
 )
 parser.add_argument(
@@ -144,6 +144,7 @@ def main(args):
     minval, maxval = minmax(train_loader)
 
     trainer = None
+    model_path = None
     # Ideally we make this from the command line args
     # We can iterate through args
     # How do we only include the args that relate to hyperparameters though?
@@ -200,7 +201,7 @@ def main(args):
                         num_workers=args.worker_count,
                     )
                 hyperparameter_choices[hyperparameter] = possibility
-                trainer, model = train(
+                trainer, model, model_path = train(
                     args,
                     minval,
                     maxval,
@@ -234,7 +235,7 @@ def main(args):
         print("Hyperparameter tuning done")
         print(scored_hyperparameter_choices)
     else:
-        trainer, model = train(
+        trainer, model, model_path = train(
             args,
             minval,
             maxval,
@@ -251,6 +252,8 @@ def main(args):
     print(hyperparameter_choices)
     print("Test Results:")
     trainer.evaluate(path_annotations_test, test_loader)
+    print("Test Results on Best Model:")
+    trainer.test_evaluate(path_annotations_test, model_path, test_loader)
 
 def get_summary_writer_log_dir(args: argparse.Namespace, hyperparameters) -> str:
     """Get a unique directory that hasn't been logged to before for use with a TB
@@ -269,6 +272,8 @@ def get_summary_writer_log_dir(args: argparse.Namespace, hyperparameters) -> str
     tb_log_dir_prefix.write(f'CNN_')
     for hyperparameter, value in hyperparameters.items():
         tb_log_dir_prefix.write(f'{hyperparameter}={value}_')
+    if args.model == "Extension1":
+        tb_log_dir_prefix.write(f'withscheduler_')
     tb_log_dir_prefix.write(f'run_')
     tb_log_dir_prefix = tb_log_dir_prefix.getvalue()
     i = 0
@@ -299,19 +304,19 @@ def train(
     )
     print("Start of Training")
     print("Hyperparameters: " + str(hyperparameters))
-    if args.model == 0:
+    if args.model == "Basic":
         model = CNN(
             length=hyperparameters["length_conv"],
             stride=hyperparameters["stride_conv"],
             channels=1,
             class_count=50,
-            dropout=hyperparameters["dropout"],
             minval=minval,
             maxval=maxval,
             normalisation=hyperparameters["normalisation"],
             out_channels=hyperparameters["outchannel_stride"]
         )
-    else:
+        scheduler = None
+    elif args.model == "Extension1":
         model = CNN_extension(
             length=hyperparameters["length_conv"],
             stride=hyperparameters["stride_conv"],
@@ -319,25 +324,33 @@ def train(
             class_count=50,
             dropout=hyperparameters["dropout"]
         )
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
     criterion = nn.BCELoss()
     optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
-    #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
     trainer = Trainer(
         model,
         train_loader,
         inter_eval_loader,
         criterion,
         optimizer,
+        scheduler,
         summary_writer,
         DEVICE
     )
-    model_path = io.StringIO()
-    model_path.write(f'models/CNN_')
-    for hyperparameter, value in hyperparameters.items():
-        model_path.write(f'{hyperparameter}={value}_')
-    model_path.write(f'run_')
-    model_path = model_path.getvalue()
-    model_path = Path(model_path)
+    # model_path = io.StringIO()
+    # model_path.write(f'models/CNN_')
+    # for hyperparameter, value in hyperparameters.items():
+    #     model_path.write(f'{hyperparameter}={value}_')
+    # model_path.write(f'run_')
+    # model_path = model_path.getvalue()
+    # i = 0
+    # model_path_full = model_path + str(i)
+    # while Path(model_path_full).exists():
+    #     i += 1
+    #     model_path_full = model_path + str(i)
+    # model_path = Path(model_path_full)
+    model_path = Path("models//" + log_dir[5:])
+    print(f"Writing model to {model_path}")
     trainer.train(
         hyperparameters,
         sample_path,
@@ -348,7 +361,7 @@ def train(
         log_frequency=log_frequency,
     )
     summary_writer.close()
-    return trainer, model
+    return trainer, model, model_path
 
 def minmax(dataloader):
     maxval = float("-inf")

@@ -7,6 +7,8 @@ from torch import nn
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from CNN import CNN
+from CNN_extension import CNN_extension
 
 import evaluation
 
@@ -21,6 +23,7 @@ class Trainer:
             inter_eval_loader: DataLoader,
             criterion: nn.Module,
             optimizer: Optimizer,
+            scheduler: torch.optim.lr_scheduler,
             summary_writer: SummaryWriter,
             device: torch.device,
     ):
@@ -30,6 +33,7 @@ class Trainer:
         self.inter_eval_loader = inter_eval_loader
         self.criterion = criterion
         self.optimizer = optimizer
+        self.scheduler = scheduler
         self.summary_writer = summary_writer
         self.step = 0
 
@@ -71,21 +75,22 @@ class Trainer:
 
                 self.step += 1
                 data_load_start_time = time.time()
-            #self.scheduler.step()
+            if self.scheduler != None:
+                self.scheduler.step()
 
             self.summary_writer.add_scalar("epoch", epoch, self.step)
-            if ((epoch + 1) % val_frequency) == 0:
+            if ((epoch + 1) % val_frequency) == 0 or (epoch + 1) == epochs:
                 auc = self.evaluate(sample_path, self.inter_eval_loader)
                 if auc >= best_auc:
+                    best_auc = auc
                     print("Saving model.")
                     torch.save({
+                        'kwargs': self.model.kwargs, 
                         'args': hyperparameter_choices,
                         'model': self.model.state_dict(),
                         'auc': auc,
                         'epoch': epoch
                     }, model_path)
-
-
 
     def print_metrics(self, epoch, loss, data_load_time, step_time):
         epoch_step = self.step % len(self.train_loader)
@@ -151,16 +156,40 @@ class Trainer:
         self.model.train()
         return auc
 
+    """""
+    The purpose of this function is to evaluate our best model against the test dataset.
+    """
+    def test_evaluate(self, sample_path, model_path: Path, eval_loader: DataLoader,):
+        results = {"preds": []}
+        total_loss = 0
+        best_state = torch.load(model_path)
+        best_model = CNN(**best_state["kwargs"])
+        best_model.load_state_dict(best_state["model"])
+        best_model = best_model.to(self.device)
+        best_model.eval()
+        with torch.no_grad():
+            for filename, batch, labels in eval_loader:
+                batch = batch.to(self.device)
+                labels = labels.to(self.device)
+                logits = best_model(batch)
+                criterion = nn.BCELoss()
+                loss = criterion(logits, labels)
+                total_loss += loss.item()
+                results["preds"].extend(list(logits.cpu()))
+        
+        auc = evaluation.evaluate(results["preds"], sample_path)
+        average_loss = total_loss / len(eval_loader)
 
-# def auc_train(preds, labels):
-#     model_outs = []
-#     for i in range(len(preds)):
-#         model_outs.append(preds[i].cpu().numpy()) # A 50D vector that assigns probability to each class
-
-#     labels = np.array(labels.cpu()).astype(float)
-#     model_outs = np.array(model_outs)
-#     print(f"labels: {labels}")
-#     print(f"models_out: {model_outs}")
-#     auc_score = roc_auc_score(y_true=labels, y_score=model_outs)
-
-#     return auc_score
+        self.summary_writer.add_scalars(
+            "area under the curve",
+            {"test": auc},
+            self.step
+        )
+        self.summary_writer.add_scalars(
+            "loss",
+            {"test": average_loss},
+            self.step
+        )
+        print(f"evaluation loss: {average_loss:.5f}, best auc: {auc * 100:2.2f}")
+        best_model.train()
+        return auc
