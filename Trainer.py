@@ -75,22 +75,24 @@ class Trainer:
 
                 self.step += 1
                 data_load_start_time = time.time()
-            if self.scheduler != None:
-                self.scheduler.step()
-
+            
             self.summary_writer.add_scalar("epoch", epoch, self.step)
-            if ((epoch + 1) % val_frequency) == 0 or (epoch + 1) == epochs:
+            if ((epoch + 1) % val_frequency) == 0 or (epoch + 1) >= epochs:
                 auc = self.evaluate(sample_path, self.inter_eval_loader)
                 if auc >= best_auc:
                     best_auc = auc
                     print("Saving model.")
                     torch.save({
+                        'name': self.model.name,
                         'kwargs': self.model.kwargs, 
                         'args': hyperparameter_choices,
                         'model': self.model.state_dict(),
                         'auc': auc,
                         'epoch': epoch
                     }, model_path)
+                if self.scheduler != None:
+                    self.scheduler.step(auc)
+                    print(self.scheduler._last_lr)
 
     def print_metrics(self, epoch, loss, data_load_time, step_time):
         epoch_step = self.step % len(self.train_loader)
@@ -163,7 +165,11 @@ class Trainer:
         results = {"preds": []}
         total_loss = 0
         best_state = torch.load(model_path)
-        best_model = CNN(**best_state["kwargs"])
+        best_model = None
+        if best_state["name"] == "CNN_basic":
+            best_model = CNN(**best_state["kwargs"])
+        elif best_state["name"] == "CNN_extension1":
+            best_model = CNN_extension(**best_state["kwargs"])
         best_model.load_state_dict(best_state["model"])
         best_model = best_model.to(self.device)
         best_model.eval()

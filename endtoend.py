@@ -35,8 +35,8 @@ parser.add_argument("--dataset-root", default=default_dataset_dir)
 parser.add_argument("--log-dir", default=Path("logs"), type=Path)
 parser.add_argument("--learning-rate", default=1e-3, type=float, help="Learning rate")
 parser.add_argument("--dropout", default=0, type=float)
-parser.add_argument("--momentum", default=0.9, type=float)
-parser.add_argument("--normalisation", default="Sakshi", type=str)
+parser.add_argument("--momentum", default=0.95, type=float)
+parser.add_argument("--normalisation", default="minmax", type=str, help="minmax or standardisation")
 parser.add_argument(
     "--length-conv",
     default=256,
@@ -53,7 +53,7 @@ parser.add_argument(
     "--model",
     default="Basic",
     type=str,
-    help="CNN or extensions",
+    help="Basic or Extension1",
 )
 parser.add_argument(
     "--batch-size",
@@ -63,7 +63,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--outchannel-stride",
-    default=16,
+    default=32,
     type=int,
     help="Out channels in the Stride Convolution",
 )
@@ -102,6 +102,11 @@ parser.add_argument(
     "--mode",
     default="training",
     help="Choices are hyperparameter-tuning, or training",
+)
+parser.add_argument(
+    "--inner-norm",
+    default="None",
+    help="None or Layer (Layer Normalisation) or Batch (Batch Normalisation)",
 )
 
 # endregion
@@ -169,6 +174,7 @@ def main(args):
         "normalisation": args.normalisation,
         "outchannel_stride": args.outchannel_stride,
         "model": args.model,
+        "inner_norm": args.inner_norm,
     }
     """
     If you specify on the command line that you want to tune hyperparameters,
@@ -178,11 +184,10 @@ def main(args):
         scored_hyperparameter_choices = []
         hyperparameter_possibilities = {
             #"batch_size": [],
-            "learning_rate": [0.005, 0.01, 0.025],
+            "learning_rate": [0.015, 0.0075],
             #"normalisation": ["minmax", "Sakshi"]
             #"learning_rate": [0.0005, 0.001, 0.0015, 0.005, 0.01],
-            #'"momentum": [0.1, 0.9, 0.92, 0.94, 0.97, 0.99],
-            #"normalisation": ["minmax", "Sakshi"]
+            "momentum": [0.92, 0.95, 0.97],
             #"epochs": [],
             #"dropout": [],
             #"length_conv": [],
@@ -218,6 +223,8 @@ def main(args):
                 if auc > best_auc:
                     best_choice = possibility
                     best_auc = auc
+                print("Test Results on Best Model (Based on val AUC):")
+                trainer.test_evaluate(path_annotations_test, model_path, test_loader)
 
             """
             Once we've tested all the different batch sizes,
@@ -250,9 +257,9 @@ def main(args):
 
     print("Evaluating against test data...")
     print(hyperparameter_choices)
-    print("Test Results:")
+    print("Test Results on Final Model:")
     trainer.evaluate(path_annotations_test, test_loader)
-    print("Test Results on Best Model:")
+    print("Test Results on Best Model (Based on val AUC):")
     trainer.test_evaluate(path_annotations_test, model_path, test_loader)
 
 def get_summary_writer_log_dir(args: argparse.Namespace, hyperparameters) -> str:
@@ -315,18 +322,28 @@ def train(
             normalisation=hyperparameters["normalisation"],
             out_channels=hyperparameters["outchannel_stride"]
         )
+        optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
         scheduler = None
     elif args.model == "Extension1":
         model = CNN_extension(
             length=hyperparameters["length_conv"],
             stride=hyperparameters["stride_conv"],
-            out_channels=hyperparameters["outchannel_stride"],
+            channels=1,
             class_count=50,
-            dropout=hyperparameters["dropout"]
+            minval=minval,
+            maxval=maxval,
+            normalisation=hyperparameters["normalisation"],
+            out_channels=hyperparameters["outchannel_stride"],
+            dropout=hyperparameters["dropout"],
+            inner_norm=hyperparameters["inner_norm"],
         )
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+        #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+        optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
+        # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', factor=1.2, threshold=5e-2, patience=3, min_lr=0.0001)
+        scheduler = None
+        print("no scheduler")
     criterion = nn.BCELoss()
-    optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
+    #optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
     trainer = Trainer(
         model,
         train_loader,
@@ -337,18 +354,6 @@ def train(
         summary_writer,
         DEVICE
     )
-    # model_path = io.StringIO()
-    # model_path.write(f'models/CNN_')
-    # for hyperparameter, value in hyperparameters.items():
-    #     model_path.write(f'{hyperparameter}={value}_')
-    # model_path.write(f'run_')
-    # model_path = model_path.getvalue()
-    # i = 0
-    # model_path_full = model_path + str(i)
-    # while Path(model_path_full).exists():
-    #     i += 1
-    #     model_path_full = model_path + str(i)
-    # model_path = Path(model_path_full)
     model_path = Path("models//" + log_dir[5:])
     print(f"Writing model to {model_path}")
     trainer.train(

@@ -5,6 +5,7 @@ from torch.nn import functional as F
 class CNN(nn.Module):
     def __init__(self, length: int, stride: int, channels: int, class_count: int, minval: int, maxval: int, normalisation, out_channels: int):
         super().__init__()
+        self.name = "CNN_basic"
         self.kwargs = {'length': length, "stride": stride, "channels": channels, "class_count": class_count, "minval": minval, "maxval": maxval, "normalisation": normalisation, "out_channels": out_channels}
         self.minval = minval
         self.maxval = maxval
@@ -61,7 +62,7 @@ class CNN(nn.Module):
             self.fc1,
             nn.ReLU(),        
             self.fc2,
-            nn.Sigmoid(),
+            nn.Sigmoid()
         )
 
     def forward(self, audio: torch.Tensor) -> torch.Tensor:
@@ -71,11 +72,10 @@ class CNN(nn.Module):
 
         x = torch.flatten(x, start_dim = 0, end_dim=1)
 
-        if self.normalisation == "Sakshi":
+        if self.normalisation == "standardisation":
             mean = torch.mean(x, dim=0)
             std = torch.std(x, dim=0)
             x = (x - mean) / std
-
         x = self.convolution(x)
         x = torch.flatten(x, start_dim = 1)
         x = self.dense(x)
