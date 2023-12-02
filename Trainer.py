@@ -20,6 +20,7 @@ class Trainer:
             self,
             model: nn.Module,
             train_loader: DataLoader,
+            train_unshuffled: DataLoader,
             inter_eval_loader: DataLoader,
             criterion: nn.Module,
             optimizer: Optimizer,
@@ -30,6 +31,7 @@ class Trainer:
         self.model = model.to(device)
         self.device = device
         self.train_loader = train_loader
+        self.train_unshuffled = train_unshuffled
         self.inter_eval_loader = inter_eval_loader
         self.criterion = criterion
         self.optimizer = optimizer
@@ -50,7 +52,7 @@ class Trainer:
     ):
         self.model.train()
         print(f'before: {count_parameters(self.model)}')
-        best_auc = 0
+        best_auc = 0    
         for epoch in range(start_epoch, epochs):
             self.model.train()
             data_load_start_time = time.time()
@@ -78,7 +80,8 @@ class Trainer:
             
             self.summary_writer.add_scalar("epoch", epoch, self.step)
             if ((epoch + 1) % val_frequency) == 0 or (epoch + 1) >= epochs:
-                auc = self.evaluate(sample_path, self.inter_eval_loader)
+                train_auc = self.evaluate(Path("annotations/train_labels.pkl"), self.train_unshuffled, epoch)
+                auc = self.evaluate(sample_path, self.inter_eval_loader, epoch)
                 if auc >= best_auc:
                     best_auc = auc
                     print("Saving model.")
@@ -128,7 +131,7 @@ class Trainer:
     The purpose of this function is to evaluate our model at regular intervals during training.
     This allows us to check in on how our training is going.
     """
-    def evaluate(self, sample_path, eval_loader: DataLoader,):
+    def evaluate(self, sample_path, eval_loader: DataLoader, epoch: int):
         results = {"preds": []}
         total_loss = 0
         self.model.eval()
@@ -144,24 +147,42 @@ class Trainer:
         auc = evaluation.evaluate(results["preds"], sample_path)
         average_loss = total_loss / len(eval_loader)
 
-        self.summary_writer.add_scalars(
-            "area under the curve",
-            {"test": auc},
-            self.step
-        )
-        self.summary_writer.add_scalars(
-            "loss",
-            {"test": average_loss},
-            self.step
-        )
-        print(f"evaluation loss: {average_loss:.5f}, auc: {auc * 100:2.2f}")
+        if "train" in str(sample_path):
+            self.summary_writer.add_scalars(
+                "area under the curve",
+                {"train": auc},
+                epoch
+            )
+            self.summary_writer.add_scalars(
+                "average loss",
+                {"train": average_loss},
+                epoch
+            )
+            print(f"train evaluation loss: {average_loss:.5f}, auc: {auc * 100:2.2f}")
+        else:
+            self.summary_writer.add_scalars(
+                "area under the curve",
+                {"val": auc},
+                epoch
+            )
+            self.summary_writer.add_scalars(
+                "average loss",
+                {"val": average_loss},
+                epoch
+            )
+            self.summary_writer.add_scalars(
+                "loss",
+                {"val": average_loss},
+                self.step
+            )
+            print(f"validation evaluation loss: {average_loss:.5f}, auc: {auc * 100:2.2f}")
         self.model.train()
         return auc
 
     """""
     The purpose of this function is to evaluate our best model against the test dataset.
     """
-    def test_evaluate(self, sample_path, model_path: Path, eval_loader: DataLoader,):
+    def test_evaluate(self, sample_path, model_path: Path, eval_loader: DataLoader):
         results = {"preds": []}
         total_loss = 0
         best_state = torch.load(model_path)

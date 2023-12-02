@@ -116,15 +116,19 @@ def main(args):
     path_annotations_train = Path("annotations/train_labels.pkl")
     path_annotations_val = Path("annotations/val_labels.pkl")
     path_annotations_test = Path("annotations/test_labels.pkl")
-    path_samples_train = Path("samples/train")
-    path_samples_val = Path("samples/val")
-    path_samples_test = Path("samples/test")
-    train_dataset = dataset.MagnaTagATune(path_annotations_train, path_samples_train)
-    val_dataset = dataset.MagnaTagATune(path_annotations_val, path_samples_val)
-    test_dataset = dataset.MagnaTagATune(path_annotations_test, path_samples_test)
+    train_dataset = dataset.MagnaTagATune(path_annotations_train, Path("samples/"))
+    val_dataset = dataset.MagnaTagATune(path_annotations_val, Path("samples/"))
+    test_dataset = dataset.MagnaTagATune(path_annotations_test, Path("samples/"))
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         shuffle=True,
+        batch_size=args.batch_size,
+        pin_memory=True,
+        num_workers=args.worker_count,
+    )
+    train_auc = torch.utils.data.DataLoader(
+        train_dataset,
+        shuffle=False,
         batch_size=args.batch_size,
         pin_memory=True,
         num_workers=args.worker_count,
@@ -211,6 +215,7 @@ def main(args):
                     minval,
                     maxval,
                     train_loader,
+                    train_auc,
                     val_loader,
                     args.eval_frequency,
                     args.print_frequency,
@@ -247,6 +252,7 @@ def main(args):
             minval,
             maxval,
             train_loader,
+            train_auc,
             val_loader,
             args.eval_frequency,
             args.print_frequency,
@@ -296,6 +302,7 @@ def train(
         minval,
         maxval,
         train_loader,
+        train_unshuffled,
         inter_eval_loader,
         eval_frequency,
         print_frequency,
@@ -347,6 +354,7 @@ def train(
     trainer = Trainer(
         model,
         train_loader,
+        train_unshuffled,
         inter_eval_loader,
         criterion,
         optimizer,
