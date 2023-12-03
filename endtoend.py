@@ -4,6 +4,7 @@ import argparse
 import io
 from pathlib import Path
 from multiprocessing import cpu_count
+import os
 
 import torch
 import torch.backends.cudnn
@@ -264,7 +265,7 @@ def main(args):
     print("Evaluating against test data...")
     print(hyperparameter_choices)
     print("Test Results on Final Model:")
-    trainer.evaluate(path_annotations_test, test_loader)
+    trainer.evaluate(path_annotations_test, test_loader, hyperparameter_choices["epochs"] - 1)
     print("Test Results on Best Model (Based on val AUC):")
     trainer.test_evaluate(path_annotations_test, model_path, test_loader)
 
@@ -362,6 +363,8 @@ def train(
         summary_writer,
         DEVICE
     )
+    if not Path("models//").is_dir():
+        os.mkdir(Path("models//"))
     model_path = Path("models//" + log_dir[5:])
     print(f"Writing model to {model_path}")
     trainer.train(
