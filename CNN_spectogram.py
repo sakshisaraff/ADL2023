@@ -21,7 +21,6 @@ class CNNspectogram(nn.Module):
         time10 = 34950 * 10
         time_steps = 34950 // 512  # Example calculation, adjust as needed
         padding_conv = 4
-
         # CNN layers
         conv1_output = (time_steps - 8 + padding_conv*2) + 1
         pool1_output = (conv1_output - 4) + 1
