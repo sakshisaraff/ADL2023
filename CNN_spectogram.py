@@ -12,13 +12,12 @@ class CNNspectogram(nn.Module):
         self.class_count = class_count
 
         # MelSpectrogram layer
-        self.mel_spectrogram = T.MelSpectrogram(sample_rate=12000, n_fft=1024, hop_length=512, n_mels=n_mels)
+        self.mel_spectrogram = T.MelSpectrogram(sample_rate=12000, n_fft=1024, hop_length=512, n_mels=128)
         self.C = 10000  # Compression constant
 
         # Assuming the dimensions of the mel spectrogram for the CNN layers
         mel_bins = n_mels
         #value representing the length of the time dimension in the Mel spectrogram. It's determined based on the size of your input audio data and the parameters of the Mel spectrogram transformation
-        time10 = 34950 * 10
         time_steps = 34950 // 512  # Example calculation, adjust as needed
         padding_conv = 4
         # CNN layers
@@ -102,3 +101,5 @@ class CNNspectogram(nn.Module):
 
 # Example usage
 # cnn = CNN(length=5, stride=2, channels=1, class_count=10, minval=0, maxval=1, normalisation="minmax", out_channels=16)
+        mel_spectrogram = self.mel_spectrogram_transform(samples)
+        self.mel_spectrogram_transform = transforms.MelSpectrogram(sample_rate=12000, n_fft=1024, hop_length=512, n_mels=128)
