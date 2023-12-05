@@ -24,7 +24,6 @@ class MagnaTagATune(data.Dataset):
         print(f"Loading data from {dataset_path}...")
         self.dataset = pd.read_pickle(dataset_path)
         self.samples_path = samples_path
-        self.mel_spectrogram_transform = transforms.MelSpectrogram(sample_rate=12000, n_fft=1024, hop_length=512, n_mels=128)
 
     def __getitem__(self, index):
         """
@@ -45,8 +44,6 @@ class MagnaTagATune(data.Dataset):
         samples = torch.from_numpy(np.load(f"{self.samples_path}/{filename}"))
         label = torch.FloatTensor(data['label'])
         samples = samples.view(10, -1).contiguous() # Create 10 subclips
-        mel_spectrogram = self.mel_spectrogram_transform(samples)
-
         return filename, samples.unsqueeze(1), label
 
     def __len__(self):
