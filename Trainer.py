@@ -51,7 +51,7 @@ class Trainer:
             start_epoch: int = 0
     ):
         self.model.train()
-        print(f'before: {count_parameters(self.model)}')
+        print(f'Parameter Count: {count_parameters(self.model)}')
         best_auc = 0    
         for epoch in range(start_epoch, epochs):
             self.model.train()
@@ -115,11 +115,6 @@ class Trainer:
             {"train": float(loss.item())},
             self.step
         )
-        # self.summary_writer.add_scalars(
-        #     "auc",
-        #     {"train": float(auc.item())},
-        #     self.step
-        # )
         self.summary_writer.add_scalar(
             "time/data", data_load_time, self.step
         )
@@ -176,6 +171,24 @@ class Trainer:
                 self.step
             )
             print(f"validation evaluation loss: {average_loss:.5f}, auc: {auc * 100:2.2f}")
+
+        # self.summary_writer.add_scalars(
+        #     "area under the curve",
+        #     {"val": auc},
+        #     epoch
+        # )
+        # self.summary_writer.add_scalars(
+        #     "average loss",
+        #     {"val": average_loss},
+        #     epoch
+        # )
+        # self.summary_writer.add_scalars(
+        #     "loss",
+        #     {"val": average_loss},
+        #     self.step
+        # )
+        # print(f"validation evaluation loss: {average_loss:.5f}, auc: {auc * 100:2.2f}")
+        
         self.model.train()
         return auc
 
@@ -206,7 +219,6 @@ class Trainer:
         
         auc = evaluation.evaluate(results["preds"], sample_path)
         average_loss = total_loss / len(eval_loader)
-
         self.summary_writer.add_scalars(
             "area under the curve",
             {"test": auc},
@@ -217,6 +229,6 @@ class Trainer:
             {"test": average_loss},
             self.step
         )
-        print(f"evaluation loss: {average_loss:.5f}, best auc: {auc * 100:2.2f}")
+        print(f"test evaluation loss: {average_loss:.5f}, best auc: {auc * 100:2.2f}")
         best_model.train()
         return auc

@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import torch
 
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, precision_score, recall_score
 
 def evaluate(preds, gts_path):
     """
@@ -31,12 +31,28 @@ def evaluate(preds, gts_path):
     model_outs = np.array(model_outs)
 
     auc_score = roc_auc_score(y_true=labels, y_score=model_outs)
-
+    
     print("EVALUATION METRICS:")
     print("-------------------------------------------------------------")
     print()
     print('AUC Score: {:.2f}'.format(auc_score))
     print()
     print("-------------------------------------------------------------")
+
+    #obtaining the per class and per sample auc
+    if "test" in str(gts_path):
+        auc_score_perclass = roc_auc_score(y_true=labels, y_score=model_outs, average=None)
+        print("EVALUATION METRICS:")
+        print("-------------------------------------------------------------")
+        print()
+        print('AUC Per Class Score: {}'.format(auc_score_perclass))
+        print()
+        print("-------------------------------------------------------------")
+
+        auc_score_df = pd.DataFrame(columns=[i for i in range(50)])
+        for i in range(len(labels)):
+            auc_score_persample = roc_auc_score(y_true=labels[i], y_score=model_outs[i], average=None)
+            auc_score_df.loc[gts.iloc[i]['file_path']] = auc_score_persample
+        auc_score_df.to_excel("auc_persample.xlsx")
 
     return auc_score # Return scores if you wish to save to a file

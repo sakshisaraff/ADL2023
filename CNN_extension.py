@@ -2,73 +2,21 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-class Conv1d(nn.Conv1d):
-    def __init__(self, in_chan, out_chan, kernel_size, stride=1, 
-                 padding=0, dilation=1, groups=1, bias=True):
-        super().__init__(in_chan, out_chan, kernel_size, stride, 
-                         padding, dilation, groups, bias)
-        print("with weight standardisation")
-    def forward(self, x):
-            weight = self.weight
-            weight_mean = weight.mean(dim=1, keepdim=True).mean(dim=2,
-                                    keepdim=True)
-            weight = weight - weight_mean
-            std = weight.view(weight.size(0), -1).std(dim=1).view(-1,1,1)+1e-5
-            weight = weight / std.expand_as(weight)
-            return F.conv1d(x, weight, self.bias, self.stride,
-                            self.padding, self.dilation, self.groups)
-
-class EstBN(nn.Module):
-
-    def __init__(self, num_features):
-        super(EstBN, self).__init__()
-        self.num_features = num_features
-        self.weight = nn.Parameter(torch.ones(num_features))
-        self.bias = nn.Parameter(torch.zeros(num_features))
-        self.register_buffer('running_mean', torch.zeros(num_features))
-        self.register_buffer('running_var', torch.ones(num_features))
-        self.register_buffer('num_batches_tracked', torch.tensor(0, dtype=torch.long))
-        self.register_buffer('estbn_moving_speed', torch.zeros(1))
-
-    def forward(self, inp):
-        ms = self.estbn_moving_speed.item()
-        if self.training:
-            with torch.no_grad():
-                inp_t = inp.transpose(0, 1).contiguous().view(self.num_features, -1)
-                running_mean = inp_t.mean(dim=1)
-                inp_t = inp_t - self.running_mean.view(-1, 1)
-                running_var = torch.mean(inp_t * inp_t, dim=1)
-                self.running_mean.data.mul_(1 - ms).add_(ms * running_mean.data)
-                self.running_var.data.mul_(1 - ms).add_(ms * running_var.data)
-        out = inp - self.running_mean.view(1, -1, 1, 1)
-        out = out / torch.sqrt(self.running_var + 1e-5).view(1, -1, 1, 1)
-        weight = self.weight.view(1, -1, 1, 1)
-        bias = self.bias.view(1, -1, 1, 1)
-        out = weight * out + bias
-        return out
-
-class BCNorm(nn.Module):
-
-    def __init__(self, num_channels, num_groups, eps, estimate=False):
-        super(BCNorm, self).__init__()
-        self.num_channels = num_channels
-        self.num_groups = num_groups
-        self.eps = eps
-        self.weight = nn.Parameter(torch.ones(1, num_groups, 1))
-        self.bias = nn.Parameter(torch.zeros(1, num_groups, 1))
-        if estimate:
-            self.bn = EstBN(num_channels)
-        else:
-            self.bn = nn.BatchNorm1d(num_channels)
-
-    def forward(self, inp):
-        out = self.bn(inp)
-        out = out.view(1, inp.size(0) * self.num_groups, -1)
-        out = torch.batch_norm(out, None, None, None, None, True, 0, self.eps, True)
-        out = out.view(inp.size(0), self.num_groups, -1)
-        out = self.weight * out + self.bias
-        out = out.view_as(inp)
-        return out
+# class Conv1d(nn.Conv1d):
+#     def __init__(self, in_chan, out_chan, kernel_size, stride=1, 
+#                  padding=0, dilation=1, groups=1, bias=True):
+#         super().__init__(in_chan, out_chan, kernel_size, stride, 
+#                          padding, dilation, groups, bias)
+#         print("with weight standardisation")
+#     def forward(self, x):
+#             weight = self.weight
+#             weight_mean = weight.mean(dim=1, keepdim=True).mean(dim=2,
+#                                     keepdim=True)
+#             weight = weight - weight_mean
+#             std = weight.view(weight.size(0), -1).std(dim=1).view(-1,1,1)+1e-5
+#             weight = weight / std.expand_as(weight)
+#             return F.conv1d(x, weight, self.bias, self.stride,
+#                             self.padding, self.dilation, self.groups)
 
 class CNN_extension(nn.Module):
     def __init__(self, length: int, stride: int, channels: int, class_count: int, minval: int, maxval: int, normalisation, out_channels: int, dropout: int, inner_norm):
@@ -133,17 +81,12 @@ class CNN_extension(nn.Module):
             self.norm2 = nn.BatchNorm1d(num_features=self.conv2.out_channels)
             self.norm3 = nn.BatchNorm1d(num_features=100)
         elif inner_norm == "Group":
-            self.normstride = nn.GroupNorm(num_groups=8, num_channels=self.stride_conv.out_channels)
-            self.norm1 = nn.GroupNorm(num_groups=8, num_channels=self.conv1.out_channels)
-            self.norm2 = nn.GroupNorm(num_groups=8, num_channels=self.conv2.out_channels)
+            #must be a multiple of 32
+            groups = 8
+            self.normstride = nn.GroupNorm(num_groups=groups, num_channels=self.stride_conv.out_channels)
+            self.norm1 = nn.GroupNorm(num_groups=groups, num_channels=self.conv1.out_channels)
+            self.norm2 = nn.GroupNorm(num_groups=groups, num_channels=self.conv2.out_channels)
             self.norm3 = nn.GroupNorm(num_groups=10, num_channels=100)
-        elif inner_norm == "Batch-Channel":
-            e = False
-            self.normstride = BCNorm(num_groups=8, num_channels=self.stride_conv.out_channels, eps=1e-05, estimate=e)
-            self.norm1 = BCNorm(num_groups=8, num_channels=self.conv1.out_channels, eps=1e-05, estimate=e)
-            self.norm2 = BCNorm(num_groups=8, num_channels=self.conv2.out_channels, eps=1e-05, estimate=e)
-            self.norm3 = BCNorm(num_groups=10, num_channels=100, eps=1e-05, estimate=e)
-            print(f"estimate = {e}")
 
         self.convolution = nn.Sequential(
             self.stride_conv,

@@ -5,6 +5,7 @@ import io
 from pathlib import Path
 from multiprocessing import cpu_count
 import os
+import numpy as np
 
 import torch
 import torch.backends.cudnn
@@ -152,6 +153,19 @@ def main(args):
 
     # Values are the same for all datasets, hence we don't recalculate them for different contexts.
     minval, maxval = minmax(train_loader)
+    
+    
+    ## code to generate the number of samples of each class in train, val, test
+    ## uncomment to print out in log file
+    #tr_samples_count = sample_count(train_loader)
+    #val_samples_count = sample_count(val_loader)    
+    # test_samples_count = sample_count(test_loader)
+    # print("Train Dataset Specifics: ")
+    # print(tr_samples_count)
+    # print("Validation Dataset Specifics: ")
+    # print(val_samples_count)
+    # print("Test Dataset Specifics: ")
+    # print(test_samples_count)
 
     trainer = None
     model_path = None
@@ -261,7 +275,7 @@ def main(args):
             hyperparameter_choices,
             path_annotations_val
         )
-
+    
     print("Evaluating against test data...")
     print(hyperparameter_choices)
     print("Test Results on Final Model:")
@@ -389,5 +403,26 @@ def minmax(dataloader):
             maxval = torch.max(data)
     return minval, maxval
 
+def sample_count(data_loader: DataLoader):
+    l_counts = {}
+    for i in range(50):
+        key = i
+        l_counts[key] = 0
+    for filename, batch, labels in data_loader:
+        labels = labels.cpu().numpy()
+        for l in labels:
+            index = np.where(l == 1)
+            for i in index[0]:
+                print(index)
+                l_counts[i] += 1
+    return l_counts
+
+# def print_samples(data_loader):
+#     for filename, batch, labels in data_loader:
+#         labels = labels.cpu().numpy()
+#         for l in range(labels):
+#             if l[29] == 1 and l[30] == 1 and 
+
+        
 if __name__ == "__main__":
     main(parser.parse_args())
