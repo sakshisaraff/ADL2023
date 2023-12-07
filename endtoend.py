@@ -6,13 +6,11 @@ from pathlib import Path
 from multiprocessing import cpu_count
 import os
 import numpy as np
-
 import torch
 import torch.backends.cudnn
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-
 import dataset
 from Trainer import Trainer
 from CNN import CNN
@@ -26,10 +24,8 @@ else:
 
 torch.backends.cudnn.benchmark = True
 
+#Parser arguments
 default_dataset_dir = Path.home() / ".cache" / "torch" / "datasets"
-
-# region Argument Parsing
-
 parser = argparse.ArgumentParser(
     description="Train a simple CNN on MagnaTagATune for End-to-End Learning",
     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -72,7 +68,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--epochs",
-    default=20,
+    default=30,
     type=int,
     help="Number of epochs (passes through the entire dataset) to train for",
 )
@@ -108,20 +104,18 @@ parser.add_argument(
 )
 parser.add_argument(
     "--inner-norm",
-    default="None",
-    help="None or Layer (Layer Normalisation) or Batch (Batch Normalisation)",
+    default="Group",
+    help="None or Layer (Layer Normalisation) or Batch (Batch Normalisation) or Group (Group Normalisation)",
 )
 
-# endregion
 
 def main(args):
-    # region Data Loading
     path_annotations_train = Path("annotations/train_labels.pkl")
     path_annotations_val = Path("annotations/val_labels.pkl")
     path_annotations_test = Path("annotations/test_labels.pkl")
-    train_dataset = dataset.MagnaTagATune(path_annotations_train, Path("samples/train/"))
-    val_dataset = dataset.MagnaTagATune(path_annotations_val, Path("samples/val/"))
-    test_dataset = dataset.MagnaTagATune(path_annotations_test, Path("samples/test/"))
+    train_dataset = dataset.MagnaTagATune(path_annotations_train, Path("samples/"))
+    val_dataset = dataset.MagnaTagATune(path_annotations_val, Path("samples/"))
+    test_dataset = dataset.MagnaTagATune(path_annotations_test, Path("samples/"))
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         shuffle=True,
@@ -129,6 +123,7 @@ def main(args):
         pin_memory=True,
         num_workers=args.worker_count,
     )
+    # unshuffled training dataset for auc for training curve 
     train_auc = torch.utils.data.DataLoader(
         train_dataset,
         shuffle=False,
@@ -150,7 +145,6 @@ def main(args):
         num_workers=args.worker_count,
         pin_memory=True,
     )
-    # endregion
 
     # Values are the same for all datasets, hence we don't recalculate them for different contexts.
     minval, maxval = minmax(train_loader)
@@ -278,7 +272,7 @@ def main(args):
         )
     
     print("Evaluating against test data...")
-    print(hyperparameter_choices)
+    # print(hyperparameter_choices)
     print("Test Results on Final Model:")
     trainer.evaluate(path_annotations_test, test_loader, hyperparameter_choices["epochs"] - 1)
     print("Test Results on Best Model (Based on val AUC):")
@@ -333,8 +327,21 @@ def train(
         flush_secs=5
     )
     print("Start of Training")
-    print("Hyperparameters: " + str(hyperparameters))
+    #print("Hyperparameters: " + str(hyperparameters))
+    #calls the different models coded into the project
     if args.model == "Basic":
+        ## uncomment to allow for changing parameters and hyperparameters
+        # model = CNN(
+        #     length=hyperparameters["length_conv"],
+        #     stride=hyperparameters["stride_conv"],
+        #     channels=1,
+        #     class_count=50,
+        #     minval=minval,
+        #     maxval=maxval,
+        #     normalisation=hyperparameters["normalisation"],
+        #     out_channels=hyperparameters["outchannel_stride"]
+        # )
+        #optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
         model = CNN(
             length=hyperparameters["length_conv"],
             stride=hyperparameters["stride_conv"],
@@ -342,27 +349,38 @@ def train(
             class_count=50,
             minval=minval,
             maxval=maxval,
-            normalisation=hyperparameters["normalisation"],
-            out_channels=hyperparameters["outchannel_stride"]
+            normalisation="minmax",
+            out_channels=32
         )
         optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
         scheduler = None
     elif args.model == "Extension1":
+        ## uncomment to allow for changing parameters and hyperparameters
+        # model = CNN_extension(
+        #     length=hyperparameters["length_conv"],
+        #     stride=hyperparameters["stride_conv"],
+        #     channels=1,
+        #     class_count=50,
+        #     minval=minval,
+        #     maxval=maxval,
+        #     normalisation=hyperparameters["normalisation"],
+        #     out_channels=hyperparameters["outchannel_stride"],
+        #     dropout=hyperparameters["dropout"],
+        #     inner_norm=hyperparameters["inner_norm"],
+        # )
         model = CNN_extension(
-            length=hyperparameters["length_conv"],
-            stride=hyperparameters["stride_conv"],
+            length=256,
+            stride=256,
             channels=1,
             class_count=50,
             minval=minval,
             maxval=maxval,
-            normalisation=hyperparameters["normalisation"],
-            out_channels=hyperparameters["outchannel_stride"],
-            dropout=hyperparameters["dropout"],
-            inner_norm=hyperparameters["inner_norm"],
+            normalisation="minmax",
+            out_channels=32,
+            dropout=0.2,
+            inner_norm="Group",
         )
-        #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
-        optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
-        # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', factor=1.2, threshold=5e-2, patience=3, min_lr=0.0001)
+        optimizer = optim.SGD(model.parameters(), lr=0.0075, momentum=0.95)
         scheduler = None
         print("no scheduler")
     elif args.model == "Deep":
@@ -370,10 +388,10 @@ def train(
             class_count=50
         )
         optimizer = optim.SGD(model.parameters(), lr=0.01,
-                              momentum=0.9, nesterov=True)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', factor=0.2, threshold=5e-2, patience=3)
+                              momentum=0.95, nesterov=True)
+        scheduler = None
+        print("no scheduler")
     criterion = nn.BCELoss()
-    #optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
     trainer = Trainer(
         model,
         train_loader,

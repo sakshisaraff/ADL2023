@@ -2,6 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+## added to test weight standardisation but was unsuccessful
 # class Conv1d(nn.Conv1d):
 #     def __init__(self, in_chan, out_chan, kernel_size, stride=1, 
 #                  padding=0, dilation=1, groups=1, bias=True):
@@ -18,6 +19,7 @@ from torch.nn import functional as F
 #             return F.conv1d(x, weight, self.bias, self.stride,
 #                             self.padding, self.dilation, self.groups)
 
+#the basic extension with Group Norm and Dropout
 class CNN_extension(nn.Module):
     def __init__(self, length: int, stride: int, channels: int, class_count: int, minval: int, maxval: int, normalisation, out_channels: int, dropout: int, inner_norm):
         super().__init__()
@@ -65,6 +67,7 @@ class CNN_extension(nn.Module):
         self.initialise_layer(self.fc2)
         self.dropout = nn.Dropout(dropout)
 
+        ##allows for testing of different normalisation layers
         if inner_norm == 'None':
             self.normstride = nn.Identity()
             self.norm1 = nn.Identity()

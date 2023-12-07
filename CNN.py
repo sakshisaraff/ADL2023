@@ -2,6 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+#the basic CNN implementations
 class CNN(nn.Module):
     def __init__(self, length: int, stride: int, channels: int, class_count: int, minval: int, maxval: int, normalisation, out_channels: int):
         super().__init__()

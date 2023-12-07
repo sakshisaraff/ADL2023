@@ -4,22 +4,6 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-# class Conv1d(nn.Conv1d):
-#     def __init__(self, in_chan, out_chan, kernel_size, stride=1, 
-#                  padding=0, dilation=1, groups=1, bias=True):
-#         super().__init__(in_chan, out_chan, kernel_size, stride, 
-#                          padding, dilation, groups, bias)
-#         print("with weight standardisation")
-#     def forward(self, x):
-#             weight = self.weight
-#             weight_mean = weight.mean(dim=1, keepdim=True).mean(dim=2,
-#                                     keepdim=True)
-#             weight = weight - weight_mean
-#             std = weight.view(weight.size(0), -1).std(dim=1).view(-1,1,1)+1e-5
-#             weight = weight / std.expand_as(weight)
-#             return F.conv1d(x, weight, self.bias, self.stride,
-#                             self.padding, self.dilation, self.groups)
-
 class SampleCNN(nn.Module):
     def __init__(self, class_count: int):
         super().__init__()
@@ -27,6 +11,7 @@ class SampleCNN(nn.Module):
         self.class_count = class_count
         self.kwargs = {"class_count": class_count}
 
+        groups = 8
         self.conv0 = nn.Conv1d(
             in_channels=1,
             out_channels=128,
@@ -34,7 +19,8 @@ class SampleCNN(nn.Module):
             stride=3,
         )
         self.initialise_layer(self.conv0)
-        self.norm0 = nn.BatchNorm1d(num_features=128)
+        #self.norm0 = nn.BatchNorm1d(num_features=128)
+        self.norm0 = nn.GroupNorm(num_groups=groups, num_channels=self.conv0.out_channels)
 
         self.conv1 = nn.Conv1d(
             in_channels=128,
@@ -44,7 +30,8 @@ class SampleCNN(nn.Module):
             padding='same'
         )
         self.initialise_layer(self.conv1)
-        self.norm1 = nn.BatchNorm1d(num_features=128)
+        #self.norm1 = nn.BatchNorm1d(num_features=128)
+        self.norm1 = nn.GroupNorm(num_groups=groups, num_channels=self.conv1.out_channels)
         self.pool1 = nn.MaxPool1d(
             kernel_size=3,
             stride=1
@@ -58,7 +45,9 @@ class SampleCNN(nn.Module):
             padding='same'
         )
         self.initialise_layer(self.conv2)
-        self.norm2 = nn.BatchNorm1d(num_features=128)
+        #self.norm2 = nn.BatchNorm1d(num_features=128)
+        self.norm2 = nn.GroupNorm(num_groups=groups, num_channels=self.conv2.out_channels)
+        
         self.pool2 = nn.MaxPool1d(
             kernel_size=3,
             stride=3
@@ -72,7 +61,8 @@ class SampleCNN(nn.Module):
             padding='same'
         )
         self.initialise_layer(self.conv3)
-        self.norm3 = nn.BatchNorm1d(num_features=256)
+        #self.norm3 = nn.BatchNorm1d(num_features=256)
+        self.norm3 = nn.GroupNorm(num_groups=groups, num_channels=self.conv3.out_channels)
         self.pool3 = nn.MaxPool1d(
             kernel_size=3,
             stride=3
@@ -86,7 +76,8 @@ class SampleCNN(nn.Module):
             padding='same'
         )
         self.initialise_layer(self.conv4)
-        self.norm4 = nn.BatchNorm1d(num_features=256)
+        # self.norm4 = nn.BatchNorm1d(num_features=256)
+        self.norm4 = nn.GroupNorm(num_groups=groups, num_channels=self.conv4.out_channels)
         self.pool4 = nn.MaxPool1d(
             kernel_size=3,
             stride=3
@@ -100,7 +91,8 @@ class SampleCNN(nn.Module):
             padding='same'
         )
         self.initialise_layer(self.conv5)
-        self.norm5 = nn.BatchNorm1d(num_features=256)
+        # self.norm5 = nn.BatchNorm1d(num_features=256)
+        self.norm5 = nn.GroupNorm(num_groups=groups, num_channels=self.conv5.out_channels)
         self.pool5 = nn.MaxPool1d(
             kernel_size=3,
             stride=3
@@ -114,7 +106,8 @@ class SampleCNN(nn.Module):
             padding='same'
         )
         self.initialise_layer(self.conv6)
-        self.norm6 = nn.BatchNorm1d(num_features=256)
+        # self.norm6 = nn.BatchNorm1d(num_features=256)
+        self.norm6 = nn.GroupNorm(num_groups=groups, num_channels=self.conv6.out_channels)
         self.pool6 = nn.MaxPool1d(
             kernel_size=3,
             stride=3
@@ -128,7 +121,8 @@ class SampleCNN(nn.Module):
             padding='same'
         )
         self.initialise_layer(self.conv7)
-        self.norm7 = nn.BatchNorm1d(num_features=256)
+        # self.norm7 = nn.BatchNorm1d(num_features=256)
+        self.norm7 = nn.GroupNorm(num_groups=groups, num_channels=self.conv7.out_channels)
         self.pool7 = nn.MaxPool1d(
             kernel_size=3,
             stride=3
@@ -142,7 +136,8 @@ class SampleCNN(nn.Module):
             padding='same'
         )
         self.initialise_layer(self.conv8)
-        self.norm8 = nn.BatchNorm1d(num_features=256)
+        # self.norm8 = nn.BatchNorm1d(num_features=256)
+        self.norm8 = nn.GroupNorm(num_groups=groups, num_channels=self.conv8.out_channels)
         self.pool8 = nn.MaxPool1d(
             kernel_size=3,
             stride=3
@@ -156,7 +151,8 @@ class SampleCNN(nn.Module):
             padding='same'
         )
         self.initialise_layer(self.conv9)
-        self.norm9 = nn.BatchNorm1d(num_features=512)
+        # self.norm9 = nn.BatchNorm1d(num_features=512)
+        self.norm9 = nn.GroupNorm(num_groups=groups, num_channels=self.conv9.out_channels)
         self.pool9 = nn.MaxPool1d(
             kernel_size=3,
             stride=3
@@ -171,12 +167,10 @@ class SampleCNN(nn.Module):
             padding='same'
         )
         self.initialise_layer(self.conv10)
-        self.norm10 = nn.BatchNorm1d(num_features=512)
-        self.dropout = nn.Dropout(0.5)
-        self.fc = nn.Linear(512, 256)
-        self.norm11 = nn.BatchNorm1d(num_features=256)
-        self.dropout2 = nn.Dropout(0.5)
-        self.fc2 = nn.Linear(256, 50)
+        # self.norm10 = nn.BatchNorm1d(num_features=512)
+        self.norm10 = nn.GroupNorm(num_groups=groups, num_channels=self.conv10.out_channels)
+        self.dropout = nn.Dropout(0.3)
+        self.fc = nn.Linear(512, 50)
 
         self.convolution = nn.Sequential(
             self.conv0,
@@ -236,22 +230,10 @@ class SampleCNN(nn.Module):
         self.dense = nn.Sequential(
             self.dropout,
             self.fc,
-            self.norm11,
-            nn.ReLU(),
-            self.dropout2,
-            self.fc2,
             nn.Sigmoid(),
         )
 
     def forward(self, audio: torch.Tensor) -> torch.Tensor:
-        # catted_clips = []
-        # for clip in audio:
-        #     catted_clip = torch.cat((clip[0], clip[1], clip[2], clip[3], clip[4], clip[5], clip[6], clip[7], clip[8], clip[9]))
-        #     catted_clips.append(catted_clip)
-        # catted_clips = torch.tensor(catted_clips)
-        # print(catted_clips.size())
-        # sys.exit()
-
         x = torch.flatten(audio, start_dim=0, end_dim=1)
         x = self.convolution(x)
         x = torch.flatten(x, start_dim=1)

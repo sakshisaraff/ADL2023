@@ -37,22 +37,25 @@ def evaluate(preds, gts_path):
     print()
     print('AUC Score: {:.2f}'.format(auc_score))
     print()
-    print("-------------------------------------------------------------")
+    #print("-------------------------------------------------------------")
 
     #obtaining the per class and per sample auc
     if "test" in str(gts_path):
         auc_score_perclass = roc_auc_score(y_true=labels, y_score=model_outs, average=None)
-        print("EVALUATION METRICS:")
-        print("-------------------------------------------------------------")
-        print()
+        # print("EVALUATION METRICS:")
+        # print("-------------------------------------------------------------")
+        # print()
         print('AUC Per Class Score: {}'.format(auc_score_perclass))
         print()
-        print("-------------------------------------------------------------")
+        # print("-------------------------------------------------------------")
 
-        auc_score_df = pd.DataFrame(columns=[i for i in range(50)])
-        for i in range(len(labels)):
-            auc_score_persample = roc_auc_score(y_true=labels[i], y_score=model_outs[i], average=None)
-            auc_score_df.loc[gts.iloc[i]['file_path']] = auc_score_persample
-        auc_score_df.to_excel("auc_persample.xlsx")
+        ##outputs the roc_auc_score per class into a excel file for further exploration
+        # auc_score_df = pd.DataFrame(columns=[i for i in range(50)])
+        # for i in range(len(labels)):
+        #     auc_score_persample = roc_auc_score(y_true=labels[i], y_score=model_outs[i], average=None)
+        #     auc_score_df.loc[gts.iloc[i]['file_path']] = auc_score_persample
+        #auc_score_df.to_excel("auc_persample.xlsx")
+
+    print("-------------------------------------------------------------")
 
     return auc_score # Return scores if you wish to save to a file
