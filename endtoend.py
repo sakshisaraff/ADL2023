@@ -357,7 +357,7 @@ def train(
             normalisation="minmax",
             out_channels=32
         )
-        optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
+        optimizer = optim.SGD(model.parameters(), lr=0.0075, momentum=0.95)
         scheduler = None
     elif args.model == "Extension1":
         ## uncomment to allow for changing parameters and hyperparameters
