@@ -26,4 +26,5 @@ python endtoend.py --model="Basic"
 #python endtoend.py --epoch=40 --model="Extension1"
 
 ##uncomment to run the deep CNN model- extension part 2
+##takes 5 hours to run so please have --time around 6 or above
 #python endtoend.py --model="Deep"
