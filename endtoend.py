@@ -290,13 +290,18 @@ def get_summary_writer_log_dir(args: argparse.Namespace, hyperparameters) -> str
         from getting logged to the same TB log directory (which you can't easily
         untangle in TB).
     """
-
     tb_log_dir_prefix = io.StringIO()
     tb_log_dir_prefix.write(f'CNN_')
-    for hyperparameter, value in hyperparameters.items():
-        tb_log_dir_prefix.write(f'{hyperparameter}={value}_')
-    if args.model == "Extension1":
-        tb_log_dir_prefix.write(f'withscheduler_')
+    # for hyperparameter, value in hyperparameters.items():
+    #     tb_log_dir_prefix.write(f'{hyperparameter}={value}_')
+    if args.model == "Basic":
+        tb_log_dir_prefix.write(f'basic_')
+        if args.length_conv != 256 and args.length_conv != 512:
+            tb_log_dir_prefix.write(f'length_conv={args.length_conv}_stride_conv={args.stride_conv}')
+    elif args.model == "Extension1":
+        tb_log_dir_prefix.write(f'extension1_')
+    elif args.model == "Deep":
+        tb_log_dir_prefix.write(f'deep_')
     tb_log_dir_prefix.write(f'run_')
     tb_log_dir_prefix = tb_log_dir_prefix.getvalue()
     i = 0
@@ -419,6 +424,7 @@ def train(
     summary_writer.close()
     return trainer, model, model_path
 
+##used for input normalisation- finds the min and max of the dataloader parameter
 def minmax(dataloader):
     maxval = float("-inf")
     minval = float("inf")
@@ -429,6 +435,7 @@ def minmax(dataloader):
             maxval = torch.max(data)
     return minval, maxval
 
+#counts the number of samples within each label
 def sample_count(data_loader: DataLoader):
     l_counts = {}
     for i in range(50):
@@ -442,13 +449,6 @@ def sample_count(data_loader: DataLoader):
                 print(index)
                 l_counts[i] += 1
     return l_counts
-
-# def print_samples(data_loader):
-#     for filename, batch, labels in data_loader:
-#         labels = labels.cpu().numpy()
-#         for l in range(labels):
-#             if l[29] == 1 and l[30] == 1 and 
-
         
 if __name__ == "__main__":
     main(parser.parse_args())
