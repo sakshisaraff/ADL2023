@@ -7,7 +7,7 @@
 
 To run our model, the sample and annotations folders have to be in the same folder as endtoend.py. The format should be as follows:
 
-![Example Image](example.png)
+<img src="example.png" alt="Alt text" width="300" height="200"/>
 
 --You can run our code with the basic CNN architecture for length and stride of 256 for strided convolution by uncommenting the following line in the endtoend.sh:
 
