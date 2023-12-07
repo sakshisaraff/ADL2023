@@ -17,6 +17,7 @@ import dataset
 from Trainer import Trainer
 from CNN import CNN
 from CNN_extension import CNN_extension
+from SampleCNN import SampleCNN
 
 if torch.cuda.is_available():
     DEVICE = torch.device("cuda")
@@ -55,7 +56,7 @@ parser.add_argument(
     "--model",
     default="Basic",
     type=str,
-    help="Basic or Extension1",
+    help="Basic or Extension1 or Deep",
 )
 parser.add_argument(
     "--batch-size",
@@ -118,9 +119,9 @@ def main(args):
     path_annotations_train = Path("annotations/train_labels.pkl")
     path_annotations_val = Path("annotations/val_labels.pkl")
     path_annotations_test = Path("annotations/test_labels.pkl")
-    train_dataset = dataset.MagnaTagATune(path_annotations_train, Path("samples/"))
-    val_dataset = dataset.MagnaTagATune(path_annotations_val, Path("samples/"))
-    test_dataset = dataset.MagnaTagATune(path_annotations_test, Path("samples/"))
+    train_dataset = dataset.MagnaTagATune(path_annotations_train, Path("samples/train/"))
+    val_dataset = dataset.MagnaTagATune(path_annotations_val, Path("samples/val/"))
+    test_dataset = dataset.MagnaTagATune(path_annotations_test, Path("samples/test/"))
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         shuffle=True,
@@ -364,6 +365,13 @@ def train(
         # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', factor=1.2, threshold=5e-2, patience=3, min_lr=0.0001)
         scheduler = None
         print("no scheduler")
+    elif args.model == "Deep":
+        model = SampleCNN(
+            class_count=50
+        )
+        optimizer = optim.SGD(model.parameters(), lr=0.01,
+                              momentum=0.9, nesterov=True)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', factor=0.2, threshold=5e-2, patience=3)
     criterion = nn.BCELoss()
     #optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
     trainer = Trainer(

@@ -80,7 +80,7 @@ class Trainer:
             
             self.summary_writer.add_scalar("epoch", epoch, self.step)
             if ((epoch + 1) % val_frequency) == 0 or (epoch + 1) >= epochs:
-                train_auc = self.evaluate(Path("annotations/train_labels.pkl"), self.train_unshuffled, epoch)
+                #train_auc = self.evaluate(Path("annotations/train_labels.pkl"), self.train_unshuffled, epoch)
                 auc = self.evaluate(sample_path, self.inter_eval_loader, epoch)
                 if auc >= best_auc:
                     best_auc = auc
@@ -142,35 +142,35 @@ class Trainer:
         auc = evaluation.evaluate(results["preds"], sample_path)
         average_loss = total_loss / len(eval_loader)
 
-        if "train" in str(sample_path):
-            self.summary_writer.add_scalars(
-                "area under the curve",
-                {"train": auc},
-                epoch
-            )
-            self.summary_writer.add_scalars(
-                "average loss",
-                {"train": average_loss},
-                epoch
-            )
-            print(f"train evaluation loss: {average_loss:.5f}, auc: {auc * 100:2.2f}")
-        else:
-            self.summary_writer.add_scalars(
-                "area under the curve",
-                {"val": auc},
-                epoch
-            )
-            self.summary_writer.add_scalars(
-                "average loss",
-                {"val": average_loss},
-                epoch
-            )
-            self.summary_writer.add_scalars(
-                "loss",
-                {"val": average_loss},
-                self.step
-            )
-            print(f"validation evaluation loss: {average_loss:.5f}, auc: {auc * 100:2.2f}")
+        # if "train" in str(sample_path):
+        #     self.summary_writer.add_scalars(
+        #         "area under the curve",
+        #         {"train": auc},
+        #         epoch
+        #     )
+        #     self.summary_writer.add_scalars(
+        #         "average loss",
+        #         {"train": average_loss},
+        #         epoch
+        #     )
+        #     print(f"train evaluation loss: {average_loss:.5f}, auc: {auc * 100:2.2f}")
+        # else:
+        self.summary_writer.add_scalars(
+            "area under the curve",
+            {"val": auc},
+            epoch
+        )
+        self.summary_writer.add_scalars(
+            "average loss",
+            {"val": average_loss},
+            epoch
+        )
+        self.summary_writer.add_scalars(
+            "loss",
+            {"val": average_loss},
+            self.step
+        )
+        print(f"validation evaluation loss: {average_loss:.5f}, auc: {auc * 100:2.2f}")
 
         # self.summary_writer.add_scalars(
         #     "area under the curve",
@@ -203,6 +203,8 @@ class Trainer:
         if best_state["name"] == "CNN_basic":
             best_model = CNN(**best_state["kwargs"])
         elif best_state["name"] == "CNN_extension1":
+            best_model = CNN_extension(**best_state["kwargs"])
+        elif best_state["name"] == "Deep":
             best_model = CNN_extension(**best_state["kwargs"])
         best_model.load_state_dict(best_state["model"])
         best_model = best_model.to(self.device)
