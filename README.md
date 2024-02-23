@@ -1,9 +1,30 @@
 # ADL2023
 
-Files provided here are:
- - dataset.py    - Code for loading the audio samples and annotations from the annotation files of MagnaTagATune
- - evaluation.py - Code to evaluate your model output on the validation set. The model outputs should be a list of tensors of length 4332 (size of val). All tensors in the list should be of size 50 (number of classes).
- - MagnaTagATune.zip - The numpy arrays for all the audio samples, as well as the .pkl files for the annotations
+<h1>Digging Deeper into Automatic Music Tagging</h1>
 
-**NOTE:** It will be much quicker to directly copy the data on BC4 with `cp -r /mnt/storage/scratch/jc17360/MagnaTagATune /mnt/storage/scratch/<user>` where you replace `<user>` with your university username. The .zip file is mainly here as a backup. Also, please store
-the data in you **scratch** space, and **not** your home space. Your scratch directory is where all data should be stored, and your code in your home directory should point to the scratch space.
+<h3>This is the coursework submission for COMSM0045 - Applied Deep Learning.</h3>
+
+
+To run our model, the sample and annotations folders have to be in the same folder as endtoend.py. The format should be as follows:
+
+<img src="example.png" alt="Alt text" width="250" height="300"/>
+
+--You can run our code with the basic CNN architecture for length and stride of 256 for strided convolution by uncommenting the following line in the endtoend.sh:
+
+#python endtoend.py --model="Basic"
+
+--You can run our code with the basic CNN model for different lengths and strides for the strided convolution by uncommenting the following line in the endtoend.sh:
+
+#python endtoend.py --model="Basic" --length-conv=1024 --stride-conv=512
+
+Here, change the values for --length-conv and --stride-conv according to the lengths and strides, respectively.
+
+--You can run our code with the basic extension2 to the CNN model with Group Normalisation and Dropout by uncommenting the following line in the endtoend.sh:
+
+#python endtoend.py --epoch=40 --model="Extension1"
+
+--You can run our code with the deep CNN extension2 by uncommenting the following line in the endtoend.sh:
+
+#python endtoend.py --model="Deep"
+
+Here, this takes 5 hours to run so please have --time around 6 or above.

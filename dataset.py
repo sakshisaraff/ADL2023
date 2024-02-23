@@ -37,7 +37,6 @@ class MagnaTagATune(data.Dataset):
             label (toch.FloatTensor): the class of the file/audio samples.
         """
         data = self.dataset.iloc[index]
-
         filename = data['file_path']
         samples = torch.from_numpy(np.load(f"{self.samples_path}/{filename}"))
         label = torch.FloatTensor(data['label'])

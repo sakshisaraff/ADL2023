@@ -1,61 +1,82 @@
 #!/usr/bin/env python3
-import time
-from multiprocessing import cpu_count
-from typing import Union, NamedTuple
-
-import torch
-import torch.backends.cudnn
-import numpy as np
-from torch import nn, optim
-from torch.nn import functional as F
-import torchvision.datasets
-from torch.optim.optimizer import Optimizer
-from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
-from torchvision import transforms
 
 import argparse
+import io
 from pathlib import Path
+from multiprocessing import cpu_count
+import os
+import numpy as np
+import torch
+import torch.backends.cudnn
+from torch import nn, optim
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+import dataset
+from Trainer import Trainer
+from CNN import CNN
+from CNN_extension import CNN_extension
+from SampleCNN import SampleCNN
+
+if torch.cuda.is_available():
+    DEVICE = torch.device("cuda")
+else:
+    DEVICE = torch.device("cpu")
 
 torch.backends.cudnn.benchmark = True
 
+#Parser arguments
+default_dataset_dir = Path.home() / ".cache" / "torch" / "datasets"
 parser = argparse.ArgumentParser(
-    description="Train a simple CNN on CIFAR-10",
+    description="Train a simple CNN on MagnaTagATune for End-to-End Learning",
     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
 )
-default_dataset_dir = Path.home() / ".cache" / "torch" / "datasets"
 parser.add_argument("--dataset-root", default=default_dataset_dir)
 parser.add_argument("--log-dir", default=Path("logs"), type=Path)
-parser.add_argument("--learning-rate", default=1e-2, type=float, help="Learning rate")
+parser.add_argument("--learning-rate", default=1e-3, type=float, help="Learning rate")
+parser.add_argument("--dropout", default=0, type=float)
+parser.add_argument("--momentum", default=0.95, type=float)
+parser.add_argument("--normalisation", default="minmax", type=str, help="minmax or standardisation")
 parser.add_argument(
     "--length-conv",
-    default=128,
+    default=256,
     type=int,
-    help="Number of images within each mini-batch",
+    help="Length used in the Stride Convolution Layer",
 )
 parser.add_argument(
     "--stride-conv",
-    default=128,
+    default=256,
     type=int,
-    help="Number of images within each mini-batch",
+    help="Stride used in the Stride Convolution Layer",
+)
+parser.add_argument(
+    "--model",
+    default="Basic",
+    type=str,
+    help="Basic or Extension1 or Deep",
 )
 parser.add_argument(
     "--batch-size",
-    default=128,
+    default=10,
     type=int,
-    help="Number of images within each mini-batch",
+    help="Number of audio examples within each batch",
+)
+parser.add_argument(
+    "--outchannel-stride",
+    default=32,
+    type=int,
+    help="Out channels in the Stride Convolution",
 )
 parser.add_argument(
     "--epochs",
-    default=20,
+    default=30,
     type=int,
     help="Number of epochs (passes through the entire dataset) to train for",
 )
 parser.add_argument(
-    "--val-frequency",
+    "--eval-frequency",
     default=2,
     type=int,
-    help="How frequently to test the model on the validation set in number of epochs",
+    help="How frequently to evaluate the model in number of epochs",
 )
 parser.add_argument(
     "--log-frequency",
@@ -76,35 +97,46 @@ parser.add_argument(
     type=int,
     help="Number of worker processes used to load data.",
 )
-
-
-class ImageShape(NamedTuple):
-    height: int
-    width: int
-    channels: int
-
-
-if torch.cuda.is_available():
-    DEVICE = torch.device("cuda")
-else:
-    DEVICE = torch.device("cpu")
+parser.add_argument(
+    "--mode",
+    default="training",
+    help="Choices are hyperparameter-tuning, or training",
+)
+parser.add_argument(
+    "--inner-norm",
+    default="Group",
+    help="None or Layer (Layer Normalisation) or Batch (Batch Normalisation) or Group (Group Normalisation)",
+)
 
 
 def main(args):
-    transform = transforms.ToTensor()
-    args.dataset_root.mkdir(parents=True, exist_ok=True)
-    train_dataset = torchvision.datasets.CIFAR10(
-        args.dataset_root, train=True, download=True, transform=transform
-    )
-    test_dataset = torchvision.datasets.CIFAR10(
-        args.dataset_root, train=False, download=False, transform=transform
-    )
+    path_annotations_train = Path("annotations/train_labels.pkl")
+    path_annotations_val = Path("annotations/val_labels.pkl")
+    path_annotations_test = Path("annotations/test_labels.pkl")
+    train_dataset = dataset.MagnaTagATune(path_annotations_train, Path("samples/"))
+    val_dataset = dataset.MagnaTagATune(path_annotations_val, Path("samples/"))
+    test_dataset = dataset.MagnaTagATune(path_annotations_test, Path("samples/"))
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         shuffle=True,
         batch_size=args.batch_size,
         pin_memory=True,
         num_workers=args.worker_count,
+    )
+    # unshuffled training dataset for auc for training curve 
+    train_auc = torch.utils.data.DataLoader(
+        train_dataset,
+        shuffle=False,
+        batch_size=args.batch_size,
+        pin_memory=True,
+        num_workers=args.worker_count,
+    )
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset,
+        shuffle=False,
+        batch_size=args.batch_size,
+        num_workers=args.worker_count,
+        pin_memory=True,
     )
     test_loader = torch.utils.data.DataLoader(
         test_dataset,
@@ -114,237 +146,139 @@ def main(args):
         pin_memory=True,
     )
 
-    model = CNN(height=32, width=32, channels=3, class_count=50)
+    # Values are the same for all datasets, hence we don't recalculate them for different contexts.
+    minval, maxval = minmax(train_loader)
+    
+    
+    ## code to generate the number of samples of each class in train, val, test
+    ## uncomment to print out in log file
+    #tr_samples_count = sample_count(train_loader)
+    #val_samples_count = sample_count(val_loader)    
+    # test_samples_count = sample_count(test_loader)
+    # print("Train Dataset Specifics: ")
+    # print(tr_samples_count)
+    # print("Validation Dataset Specifics: ")
+    # print(val_samples_count)
+    # print("Test Dataset Specifics: ")
+    # print(test_samples_count)
 
-    ## TASK 8: Redefine the criterion to be softmax cross entropy
-    criterion = nn.BCEloss()
-
-    ## TASK 11: Define the optimizer
-    optimizer = optim.
-
-    log_dir = get_summary_writer_log_dir(args)
-    print(f"Writing logs to {log_dir}")
-    summary_writer = SummaryWriter(
-            str(log_dir),
-            flush_secs=5
-    )
-    trainer = Trainer(
-        model, train_loader, test_loader, criterion, optimizer, summary_writer, DEVICE
-    )
-
-    trainer.train(
-        args.epochs,
-        args.val_frequency,
-        print_frequency=args.print_frequency,
-        log_frequency=args.log_frequency,
-    )
-
-    summary_writer.close()
-
-
-class CNN(nn.Module):
-    def __init__(self, length: int, stride: int, channels: int, class_count: int):
-        super().__init__()
-        #self.input_shape = ImageShape(height=height, width=width, channels=channels)
-        self.class_count = class_count
-        self.stride_conv = nn.Conv1d(
-            in_channels=self.input_shape.channels,
-            out_channels=1,
-            kernel_size=length,
-            padding=0,
-            stride=stride,
-        )
-        self.initialise_layer(self.stride_conv)
-        self.conv1 = nn.Conv1d(
-            in_channels=self.stride_conv.out_channels,
-            out_channels=32,
-            kernel_size=8,
-            padding=0,
-        )
-        self.initialise_layer(self.conv1)
-        self.pool1 = nn.MaxPool1d(kernel_size=4)
-        self.conv2 = nn.Conv1d(
-            in_channels=conv1.out_channels,
-            out_channels=32,
-            kernel_size=8,
-            padding=0,
-        )
-        self.initialise_layer(self.conv2)
-        self.pool2 = nn.MaxPool1d(kernel_size=4)
-        self.fc1 = nn.Linear(100)        
-
-
-    def forward(self, audio: torch.Tensor) -> torch.Tensor:
-        x = F.relu(self.conv1(audio))
-        x = self.pool1(x)
-        x = F.relu(self.conv2(x))
-        x = self.pool2(x)
-        x = torch.flatten(x, start_dim=1)
-        x = self.fc1(x)
-        x = 
-        return x
-
-    @staticmethod
-    def initialise_layer(layer):
-        if hasattr(layer, "bias"):
-            nn.init.zeros_(layer.bias)
-        if hasattr(layer, "weight"):
-            nn.init.kaiming_normal_(layer.weight)
-
-
-class Trainer:
-    def __init__(
-        self,
-        model: nn.Module,
-        train_loader: DataLoader,
-        val_loader: DataLoader,
-        criterion: nn.Module,
-        optimizer: Optimizer,
-        summary_writer: SummaryWriter,
-        device: torch.device,
-    ):
-        self.model = model.to(device)
-        self.device = device
-        self.train_loader = train_loader
-        self.val_loader = val_loader
-        self.criterion = criterion
-        self.optimizer = optimizer
-        self.summary_writer = summary_writer
-        self.step = 0
-
-    def train(
-        self,
-        epochs: int,
-        val_frequency: int,
-        print_frequency: int = 20,
-        log_frequency: int = 5,
-        start_epoch: int = 0
-    ):
-        self.model.train()
-        for epoch in range(start_epoch, epochs):
-            self.model.train()
-            data_load_start_time = time.time()
-            for batch, labels in self.train_loader:
-                batch = batch.to(self.device)
-                labels = labels.to(self.device)
-                data_load_end_time = time.time()
-
-
-                ## TASK 1: Compute the forward pass of the model, print the output shape
-                ##         and quit the program
-                #output =
-
-                ## TASK 7: Rename `output` to `logits`, remove the output shape printing
-                ##         and get rid of the `import sys; sys.exit(1)`
-
-                ## TASK 9: Compute the loss using self.criterion and
-                ##         store it in a variable called `loss`
-                loss = torch.tensor(0)
-
-                ## TASK 10: Compute the backward pass
-
-                ## TASK 12: Step the optimizer and then zero out the gradient buffers.
-
-                with torch.no_grad():
-                    preds = logits.argmax(-1)
-                    accuracy = compute_accuracy(labels, preds)
-
-                data_load_time = data_load_end_time - data_load_start_time
-                step_time = time.time() - data_load_end_time
-                if ((self.step + 1) % log_frequency) == 0:
-                    self.log_metrics(epoch, accuracy, loss, data_load_time, step_time)
-                if ((self.step + 1) % print_frequency) == 0:
-                    self.print_metrics(epoch, accuracy, loss, data_load_time, step_time)
-
-                self.step += 1
-                data_load_start_time = time.time()
-
-            self.summary_writer.add_scalar("epoch", epoch, self.step)
-            if ((epoch + 1) % val_frequency) == 0:
-                self.validate()
-                # self.validate() will put the model in validation mode,
-                # so we have to switch back to train mode afterwards
-                self.model.train()
-
-    def print_metrics(self, epoch, accuracy, loss, data_load_time, step_time):
-        epoch_step = self.step % len(self.train_loader)
-        print(
-                f"epoch: [{epoch}], "
-                f"step: [{epoch_step}/{len(self.train_loader)}], "
-                f"batch loss: {loss:.5f}, "
-                f"batch accuracy: {accuracy * 100:2.2f}, "
-                f"data load time: "
-                f"{data_load_time:.5f}, "
-                f"step time: {step_time:.5f}"
-        )
-
-    def log_metrics(self, epoch, accuracy, loss, data_load_time, step_time):
-        self.summary_writer.add_scalar("epoch", epoch, self.step)
-        self.summary_writer.add_scalars(
-                "accuracy",
-                {"train": accuracy},
-                self.step
-        )
-        self.summary_writer.add_scalars(
-                "loss",
-                {"train": float(loss.item())},
-                self.step
-        )
-        self.summary_writer.add_scalar(
-                "time/data", data_load_time, self.step
-        )
-        self.summary_writer.add_scalar(
-                "time/data", step_time, self.step
-        )
-
-    def validate(self):
-        results = {"preds": [], "labels": []}
-        total_loss = 0
-        self.model.eval()
-
-        # No need to track gradients for validation, we're not optimizing.
-        with torch.no_grad():
-            for batch, labels in self.val_loader:
-                batch = batch.to(self.device)
-                labels = labels.to(self.device)
-                logits = self.model(batch)
-                loss = self.criterion(logits, labels)
-                total_loss += loss.item()
-                preds = logits.argmax(dim=-1).cpu().numpy()
-                results["preds"].extend(list(preds))
-                results["labels"].extend(list(labels.cpu().numpy()))
-
-        accuracy = compute_accuracy(
-            np.array(results["labels"]), np.array(results["preds"])
-        )
-        average_loss = total_loss / len(self.val_loader)
-
-        self.summary_writer.add_scalars(
-                "accuracy",
-                {"test": accuracy},
-                self.step
-        )
-        self.summary_writer.add_scalars(
-                "loss",
-                {"test": average_loss},
-                self.step
-        )
-        print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy * 100:2.2f}")
-
-
-def compute_accuracy(
-    labels: Union[torch.Tensor, np.ndarray], preds: Union[torch.Tensor, np.ndarray]
-) -> float:
+    trainer = None
+    model_path = None
+    # Ideally we make this from the command line args
+    # We can iterate through args
+    # How do we only include the args that relate to hyperparameters though?
+    # Right now when we add a hyperparameter we need to:
+        # Add it to hyperparameter_possibilities
+        # Add it to hyperparameter_choices REMOVE
+        # Add it to args
+        # Pass it to the right thing in train() REMOVE
+        # Make use of it in the correct place
+    # Ideally, we just want to:
+        # Add it to args
+        # Make use of it in the correct place
+        # Add it to hyperparameter_possibilities if we intend to hyperparameter tune it
+    hyperparameter_choices = {
+        "batch_size": args.batch_size,
+        "epochs": args.epochs,
+        "learning_rate": args.learning_rate,
+        "momentum": args.momentum,
+        "dropout": args.dropout,
+        "length_conv": args.length_conv,
+        "stride_conv": args.stride_conv,
+        "normalisation": args.normalisation,
+        "outchannel_stride": args.outchannel_stride,
+        "model": args.model,
+        "inner_norm": args.inner_norm,
+    }
     """
-    Args:
-        labels: ``(batch_size, class_count)`` tensor or array containing example labels
-        preds: ``(batch_size, class_count)`` tensor or array containing model prediction
+    If you specify on the command line that you want to tune hyperparameters,
+    use grid search to alter hyperparameter_choices.
     """
-    assert len(labels) == len(preds)
-    return float((labels == preds).sum()) / len(labels)
+    if args.mode == "hyperparameter-tuning":
+        scored_hyperparameter_choices = []
+        hyperparameter_possibilities = {
+            #"batch_size": [],
+            "learning_rate": [0.015, 0.0075],
+            #"normalisation": ["minmax", "Sakshi"]
+            #"learning_rate": [0.0005, 0.001, 0.0015, 0.005, 0.01],
+            "momentum": [0.92, 0.95, 0.97],
+            #"epochs": [],
+            #"dropout": [],
+            #"length_conv": [],
+            #"stride_conv": []
+        }
+        for hyperparameter, possibilities in hyperparameter_possibilities.items():
+            best_auc = 0
+            best_choice = None
+            for possibility in possibilities:
+                if hyperparameter == "batch_size":
+                    train_loader = torch.utils.data.DataLoader(
+                        train_dataset,
+                        shuffle=True,
+                        batch_size=possibility,
+                        pin_memory=True,
+                        num_workers=args.worker_count,
+                    )
+                hyperparameter_choices[hyperparameter] = possibility
+                trainer, model, model_path = train(
+                    args,
+                    minval,
+                    maxval,
+                    train_loader,
+                    train_auc,
+                    val_loader,
+                    args.eval_frequency,
+                    args.print_frequency,
+                    args.log_frequency,
+                    hyperparameter_choices,
+                    path_annotations_val,
+                )
+                auc = trainer.evaluate(path_annotations_val, val_loader)
+                scored_hyperparameter_choices.append((auc, hyperparameter_choices.copy()))
+                if auc > best_auc:
+                    best_choice = possibility
+                    best_auc = auc
+                print("Test Results on Best Model (Based on val AUC):")
+                trainer.test_evaluate(path_annotations_test, model_path, test_loader)
 
+            """
+            Once we've tested all the different batch sizes,
+            we can make a loader with the best one.
+            """
+            if hyperparameter == "batch_size":
+                train_loader = torch.utils.data.DataLoader(
+                    train_dataset,
+                    shuffle=True,
+                    batch_size=hyperparameter_choices["batch_size"],
+                    pin_memory=True,
+                    num_workers=args.worker_count,
+                )
+            hyperparameter_choices[hyperparameter] = best_choice
+        print("Hyperparameter tuning done")
+        print(scored_hyperparameter_choices)
+    else:
+        trainer, model, model_path = train(
+            args,
+            minval,
+            maxval,
+            train_loader,
+            train_auc,
+            val_loader,
+            args.eval_frequency,
+            args.print_frequency,
+            args.log_frequency,
+            hyperparameter_choices,
+            path_annotations_val
+        )
+    
+    print("Evaluating against test data...")
+    # print(hyperparameter_choices)
+    print("Test Results on Final Model:")
+    trainer.evaluate(path_annotations_test, test_loader, hyperparameter_choices["epochs"] - 1)
+    print("Test Results on Best Model (Based on val AUC):")
+    trainer.test_evaluate(path_annotations_test, model_path, test_loader)
 
-def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
+def get_summary_writer_log_dir(args: argparse.Namespace, hyperparameters) -> str:
     """Get a unique directory that hasn't been logged to before for use with a TB
     SummaryWriter.
 
@@ -356,7 +290,20 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
         from getting logged to the same TB log directory (which you can't easily
         untangle in TB).
     """
-    tb_log_dir_prefix = f'CNN_bs={args.batch_size}_lr={args.learning_rate}_run_'
+    tb_log_dir_prefix = io.StringIO()
+    tb_log_dir_prefix.write(f'CNN_')
+    # for hyperparameter, value in hyperparameters.items():
+    #     tb_log_dir_prefix.write(f'{hyperparameter}={value}_')
+    if args.model == "Basic":
+        tb_log_dir_prefix.write(f'basic_')
+        if args.length_conv != 256 and args.length_conv != 512:
+            tb_log_dir_prefix.write(f'length_conv={args.length_conv}_stride_conv={args.stride_conv}')
+    elif args.model == "Extension1":
+        tb_log_dir_prefix.write(f'extension1_')
+    elif args.model == "Deep":
+        tb_log_dir_prefix.write(f'deep_')
+    tb_log_dir_prefix.write(f'run_')
+    tb_log_dir_prefix = tb_log_dir_prefix.getvalue()
     i = 0
     while i < 1000:
         tb_log_dir = args.log_dir / (tb_log_dir_prefix + str(i))
@@ -365,6 +312,143 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
         i += 1
     return str(tb_log_dir)
 
+def train(
+        args,
+        minval,
+        maxval,
+        train_loader,
+        train_unshuffled,
+        inter_eval_loader,
+        eval_frequency,
+        print_frequency,
+        log_frequency,
+        hyperparameters,
+        sample_path
+):
+    log_dir = get_summary_writer_log_dir(args, hyperparameters)
+    print(f"Writing logs to {log_dir}")
+    summary_writer = SummaryWriter(
+        str(log_dir),
+        flush_secs=5
+    )
+    print("Start of Training")
+    #print("Hyperparameters: " + str(hyperparameters))
+    #calls the different models coded into the project
+    if args.model == "Basic":
+        ## uncomment to allow for changing parameters and hyperparameters
+        # model = CNN(
+        #     length=hyperparameters["length_conv"],
+        #     stride=hyperparameters["stride_conv"],
+        #     channels=1,
+        #     class_count=50,
+        #     minval=minval,
+        #     maxval=maxval,
+        #     normalisation=hyperparameters["normalisation"],
+        #     out_channels=hyperparameters["outchannel_stride"]
+        # )
+        #optimizer = optim.SGD(model.parameters(), lr=hyperparameters["learning_rate"], momentum=hyperparameters["momentum"])
+        model = CNN(
+            length=hyperparameters["length_conv"],
+            stride=hyperparameters["stride_conv"],
+            channels=1,
+            class_count=50,
+            minval=minval,
+            maxval=maxval,
+            normalisation="minmax",
+            out_channels=32
+        )
+        optimizer = optim.SGD(model.parameters(), lr=0.0075, momentum=0.95)
+        scheduler = None
+    elif args.model == "Extension1":
+        ## uncomment to allow for changing parameters and hyperparameters
+        # model = CNN_extension(
+        #     length=hyperparameters["length_conv"],
+        #     stride=hyperparameters["stride_conv"],
+        #     channels=1,
+        #     class_count=50,
+        #     minval=minval,
+        #     maxval=maxval,
+        #     normalisation=hyperparameters["normalisation"],
+        #     out_channels=hyperparameters["outchannel_stride"],
+        #     dropout=hyperparameters["dropout"],
+        #     inner_norm=hyperparameters["inner_norm"],
+        # )
+        model = CNN_extension(
+            length=256,
+            stride=256,
+            channels=1,
+            class_count=50,
+            minval=minval,
+            maxval=maxval,
+            normalisation="minmax",
+            out_channels=32,
+            dropout=0.2,
+            inner_norm="Group",
+        )
+        optimizer = optim.SGD(model.parameters(), lr=0.0075, momentum=0.95)
+        scheduler = None
+        print("no scheduler")
+    elif args.model == "Deep":
+        model = SampleCNN(
+            class_count=50
+        )
+        optimizer = optim.SGD(model.parameters(), lr=0.01,
+                              momentum=0.95, nesterov=True)
+        scheduler = None
+        print("no scheduler")
+    criterion = nn.BCELoss()
+    trainer = Trainer(
+        model,
+        train_loader,
+        train_unshuffled,
+        inter_eval_loader,
+        criterion,
+        optimizer,
+        scheduler,
+        summary_writer,
+        DEVICE
+    )
+    if not Path("models//").is_dir():
+        os.mkdir(Path("models//"))
+    model_path = Path("models//" + log_dir[5:])
+    print(f"Writing model to {model_path}")
+    trainer.train(
+        hyperparameters,
+        sample_path,
+        model_path,
+        hyperparameters["epochs"],
+        eval_frequency,
+        print_frequency=print_frequency,
+        log_frequency=log_frequency,
+    )
+    summary_writer.close()
+    return trainer, model, model_path
 
+##used for input normalisation- finds the min and max of the dataloader parameter
+def minmax(dataloader):
+    maxval = float("-inf")
+    minval = float("inf")
+    for filename, data, label in dataloader:
+        if minval > torch.min(data):
+            minval = torch.min(data)
+        if maxval < torch.max(data):
+            maxval = torch.max(data)
+    return minval, maxval
+
+#counts the number of samples within each label
+def sample_count(data_loader: DataLoader):
+    l_counts = {}
+    for i in range(50):
+        key = i
+        l_counts[key] = 0
+    for filename, batch, labels in data_loader:
+        labels = labels.cpu().numpy()
+        for l in labels:
+            index = np.where(l == 1)
+            for i in index[0]:
+                print(index)
+                l_counts[i] += 1
+    return l_counts
+        
 if __name__ == "__main__":
     main(parser.parse_args())
